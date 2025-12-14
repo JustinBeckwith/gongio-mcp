@@ -1,6 +1,6 @@
 {
 	"name": "gongio-mcp",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"description": "MCP server for Gong.io - access calls, transcripts, and users",
 	"mcpName": "io.github.JustinBeckwith/gongio-mcp",
 	"type": "module",
@@ -12,7 +12,6 @@
 		"dist"
 	],
 	"scripts": {
-		"preinstall": "node -e \"if(!process.env.npm_execpath.includes('pnpm')){console.error('\\x1b[31mError: Use pnpm instead of npm!\\x1b[0m\\n\\nRun: corepack enable && pnpm install');process.exit(1)}\"",
 		"start": "node --env-file=.env dist/index.js",
 		"dev": "node --env-file=.env --watch --experimental-strip-types src/index.ts",
 		"build": "tsc && chmod 755 dist/index.js",
