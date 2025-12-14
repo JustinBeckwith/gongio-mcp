@@ -1,16 +1,16 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
-  "name": "io.github.JustinBeckwith/gong-mcp",
+  "name": "io.github.JustinBeckwith/gongio-mcp",
   "description": "MCP server for Gong.io - access calls, transcripts, and users",
   "repository": {
-    "url": "https://github.com/JustinBeckwith/gong-mcp",
+    "url": "https://github.com/JustinBeckwith/gongio-mcp",
     "source": "github"
   },
   "version": "1.0.0",
   "packages": [
     {
       "registryType": "npm",
-      "identifier": "gong-mcp",
+      "identifier": "gongio-mcp",
       "version": "1.0.0",
       "transport": {
         "type": "stdio"

@@ -29,14 +29,14 @@ An MCP (Model Context Protocol) server that provides access to your Gong.io data
 ### From npm
 
 ```bash
-npm install -g gong-mcp
+npm install -g gongio-mcp
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/your-username/gong-mcp.git
-cd gong-mcp
+git clone https://github.com/your-username/gongio-mcp.git
+cd gongio-mcp
 npm install
 npm run build
 ```
@@ -55,7 +55,7 @@ export GONG_ACCESS_KEY_SECRET="your-secret-key"
 ### Running the Server
 
 ```bash
-gong-mcp
+gongio-mcp
 # or if installed locally:
 npm start
 ```
@@ -69,7 +69,7 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
   "mcpServers": {
     "gong": {
       "command": "npx",
-      "args": ["gong-mcp"],
+      "args": ["gongio-mcp"],
       "env": {
         "GONG_ACCESS_KEY": "your-access-key",
         "GONG_ACCESS_KEY_SECRET": "your-secret-key"

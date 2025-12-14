@@ -2,7 +2,7 @@
 	"packages": {
 		".": {
 			"release-type": "node",
-			"package-name": "gong-mcp",
+			"package-name": "gongio-mcp",
 			"changelog-path": "CHANGELOG.md",
 			"extra-files": [
 				"package.json",

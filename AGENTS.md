@@ -4,7 +4,7 @@ This document provides guidance for AI agents working on this codebase.
 
 ## Project Overview
 
-**gong-mcp** is an MCP (Model Context Protocol) server that provides access to Gong.io data. It allows MCP-compatible clients like Claude Desktop to query calls, retrieve transcripts, and list users from Gong.
+**gongio-mcp** is an MCP (Model Context Protocol) server that provides access to Gong.io data. It allows MCP-compatible clients like Claude Desktop to query calls, retrieve transcripts, and list users from Gong.
 
 ## Tech Stack
 

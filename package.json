@@ -1,12 +1,12 @@
 {
-	"name": "gong-mcp",
+	"name": "gongio-mcp",
 	"version": "1.0.0",
 	"description": "MCP server for Gong.io - access calls, transcripts, and users",
-	"mcpName": "io.github.JustinBeckwith/gong-mcp",
+	"mcpName": "io.github.JustinBeckwith/gongio-mcp",
 	"type": "module",
 	"main": "dist/index.js",
 	"bin": {
-		"gong-mcp": "dist/index.js"
+		"gongio-mcp": "dist/index.js"
 	},
 	"files": [
 		"dist"
@@ -38,12 +38,12 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/JustinBeckwith/gong-mcp.git"
+		"url": "https://github.com/JustinBeckwith/gongio-mcp.git"
 	},
 	"bugs": {
-		"url": "https://github.com/JustinBeckwith/gong-mcp/issues"
+		"url": "https://github.com/JustinBeckwith/gongio-mcp/issues"
 	},
-	"homepage": "https://github.com/JustinBeckwith/gong-mcp#readme",
+	"homepage": "https://github.com/JustinBeckwith/gongio-mcp#readme",
 	"engines": {
 		"node": ">=18.0.0"
 	},

@@ -9,7 +9,7 @@ concurrency:
 permissions: {}
 jobs:
   release-please:
-    if: github.repository == 'JustinBeckwith/gong-mcp'
+    if: github.repository == 'JustinBeckwith/gongio-mcp'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

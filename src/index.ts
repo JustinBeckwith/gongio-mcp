@@ -27,7 +27,7 @@ const gong = new GongClient({
 
 const server = new Server(
   {
-    name: "gong-mcp",
+    name: "gongio-mcp",
     version: "1.0.0",
   },
   {
