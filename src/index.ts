@@ -7,7 +7,20 @@ import {
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { ZodError } from "zod";
 import { GongClient } from "./gong.js";
+import {
+  listCallsRequestSchema,
+  getCallSummaryRequestSchema,
+  getCallTranscriptRequestSchema,
+  listUsersRequestSchema,
+} from "./schemas.js";
+import {
+  formatCallsResponse,
+  formatCallSummary,
+  formatCallTranscript,
+  formatUsersResponse,
+} from "./formatters.js";
 
 // Get credentials from environment
 const accessKey = process.env.GONG_ACCESS_KEY;
@@ -45,101 +58,82 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "list_calls",
         description:
-          "List Gong calls with optional date filtering. Returns call metadata including ID, title, duration, and participants.",
+          "List Gong calls with optional date filtering. Returns minimal call metadata (ID, title, date, duration). Use get_call_summary for details or get_call_transcript for full transcript.",
         inputSchema: {
           type: "object",
           properties: {
             fromDateTime: {
               type: "string",
               description:
-                "Start date/time filter in ISO 8601 format (e.g., 2024-01-01T00:00:00Z)",
+                "Start date/time filter in ISO 8601 format (e.g., 2024-01-01T00:00:00Z). Must be before toDateTime if both specified.",
+              pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$",
             },
             toDateTime: {
               type: "string",
               description:
-                "End date/time filter in ISO 8601 format (e.g., 2024-01-31T23:59:59Z)",
+                "End date/time filter in ISO 8601 format (e.g., 2024-01-31T23:59:59Z). Must be after fromDateTime if both specified.",
+              pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$",
+            },
+            workspaceId: {
+              type: "string",
+              description: "Filter calls by workspace ID (numeric string up to 20 digits)",
+              pattern: "^\\d{1,20}$",
             },
             cursor: {
               type: "string",
               description: "Pagination cursor for fetching next page of results",
+              minLength: 1,
             },
           },
         },
       },
       {
-        name: "get_call_details",
+        name: "get_call_summary",
         description:
-          "Get detailed information about specific calls including participants, topics, trackers, action items, and more.",
+          "Get a summary of a single call including participants, topics, key points, and action items. Use this after list_calls to get details for a specific call.",
         inputSchema: {
           type: "object",
           properties: {
-            callIds: {
-              type: "array",
-              items: { type: "string" },
-              description: "Array of call IDs to retrieve details for",
+            callId: {
+              type: "string",
+              pattern: "^\\d{1,20}$",
+              description: "Gong call ID (numeric string up to 20 digits)",
             },
           },
-          required: ["callIds"],
+          required: ["callId"],
         },
       },
       {
-        name: "get_transcripts",
+        name: "get_call_transcript",
         description:
-          "Retrieve full transcripts for specified calls. Returns speaker-attributed, timestamped transcript text.",
+          "Get the full transcript for a single call. Returns speaker-attributed conversation text. Only fetch this when you specifically need the transcript content.",
         inputSchema: {
           type: "object",
           properties: {
-            callIds: {
-              type: "array",
-              items: { type: "string" },
-              description: "Array of call IDs to retrieve transcripts for",
+            callId: {
+              type: "string",
+              pattern: "^\\d{1,20}$",
+              description: "Gong call ID (numeric string up to 20 digits)",
             },
           },
-          required: ["callIds"],
+          required: ["callId"],
         },
       },
       {
         name: "list_users",
         description:
-          "List all Gong users in your workspace. Returns user details including name, email, and settings.",
+          "List all Gong users in your workspace. Returns user details including name, email, and title.",
         inputSchema: {
           type: "object",
           properties: {
             cursor: {
               type: "string",
               description: "Pagination cursor for fetching next page of results",
+              minLength: 1,
             },
-          },
-        },
-      },
-      {
-        name: "search_calls",
-        description:
-          "Search for calls with various filters including date range, user IDs, and specific call IDs.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            fromDateTime: {
-              type: "string",
-              description: "Start date/time filter in ISO 8601 format",
-            },
-            toDateTime: {
-              type: "string",
-              description: "End date/time filter in ISO 8601 format",
-            },
-            primaryUserIds: {
-              type: "array",
-              items: { type: "string" },
-              description: "Filter by primary user IDs (the call hosts)",
-            },
-            callIds: {
-              type: "array",
-              items: { type: "string" },
-              description: "Filter by specific call IDs",
-            },
-            cursor: {
-              type: "string",
-              description: "Pagination cursor for fetching next page of results",
+            includeAvatars: {
+              type: "boolean",
+              description: "Whether to include user avatar URLs in the response",
             },
           },
         },
@@ -155,80 +149,69 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     switch (name) {
       case "list_calls": {
-        const result = await gong.listCalls({
-          fromDateTime: args?.fromDateTime as string | undefined,
-          toDateTime: args?.toDateTime as string | undefined,
-          cursor: args?.cursor as string | undefined,
-        });
+        // Validate input with Zod schema (will throw ZodError if invalid)
+        const validated = listCallsRequestSchema.parse(args ?? {});
+        const result = await gong.listCalls(validated);
         return {
           content: [
             {
               type: "text",
-              text: JSON.stringify(result, null, 2),
+              text: formatCallsResponse(result),
             },
           ],
         };
       }
 
-      case "get_call_details": {
-        const callIds = args?.callIds as string[];
-        if (!callIds?.length) {
-          throw new Error("callIds is required and must be a non-empty array");
+      case "get_call_summary": {
+        // Validate input with Zod schema (will throw ZodError if invalid)
+        const validated = getCallSummaryRequestSchema.parse(args);
+        const result = await gong.getCallDetails([validated.callId]);
+        const call = result.calls[0];
+        if (!call) {
+          throw new Error(`Call not found: ${validated.callId}`);
         }
-        const result = await gong.getCallDetails(callIds);
         return {
           content: [
             {
               type: "text",
-              text: JSON.stringify(result, null, 2),
+              text: formatCallSummary(call),
             },
           ],
         };
       }
 
-      case "get_transcripts": {
-        const callIds = args?.callIds as string[];
-        if (!callIds?.length) {
-          throw new Error("callIds is required and must be a non-empty array");
+      case "get_call_transcript": {
+        // Validate input with Zod schema (will throw ZodError if invalid)
+        const validated = getCallTranscriptRequestSchema.parse(args);
+        // Fetch both transcript and call details to get speaker names
+        const [transcriptResult, detailsResult] = await Promise.all([
+          gong.getTranscripts([validated.callId]),
+          gong.getCallDetails([validated.callId]),
+        ]);
+        const transcript = transcriptResult.callTranscripts[0];
+        const details = detailsResult.calls[0];
+        if (!transcript) {
+          throw new Error(`Transcript not found: ${validated.callId}`);
         }
-        const result = await gong.getTranscripts(callIds);
         return {
           content: [
             {
               type: "text",
-              text: JSON.stringify(result, null, 2),
+              text: formatCallTranscript(transcript, details?.parties),
             },
           ],
         };
       }
 
       case "list_users": {
-        const result = await gong.listUsers({
-          cursor: args?.cursor as string | undefined,
-        });
+        // Validate input with Zod schema (will throw ZodError if invalid)
+        const validated = listUsersRequestSchema.parse(args ?? {});
+        const result = await gong.listUsers(validated);
         return {
           content: [
             {
               type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      }
-
-      case "search_calls": {
-        const result = await gong.searchCalls({
-          fromDateTime: args?.fromDateTime as string | undefined,
-          toDateTime: args?.toDateTime as string | undefined,
-          primaryUserIds: args?.primaryUserIds as string[] | undefined,
-          callIds: args?.callIds as string[] | undefined,
-          cursor: args?.cursor as string | undefined,
-        });
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
+              text: formatUsersResponse(result),
             },
           ],
         };
@@ -238,7 +221,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new Error(`Unknown tool: ${name}`);
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    let message: string;
+    if (error instanceof ZodError) {
+      // Format Zod validation errors nicely
+      const issues = error.issues.map((issue) => {
+        const path = issue.path.length > 0 ? `${issue.path.join(".")}: ` : "";
+        return `${path}${issue.message}`;
+      });
+      message = `Validation error: ${issues.join("; ")}`;
+    } else if (error instanceof Error) {
+      message = error.message;
+    } else {
+      message = String(error);
+    }
     return {
       content: [
         {
@@ -259,7 +254,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
         uri: "gong://users",
         name: "Gong Users",
         description: "List of all users in your Gong workspace",
-        mimeType: "application/json",
+        mimeType: "text/markdown",
       },
     ],
   };
@@ -275,8 +270,8 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
       contents: [
         {
           uri,
-          mimeType: "application/json",
-          text: JSON.stringify(result, null, 2),
+          mimeType: "text/markdown",
+          text: formatUsersResponse(result),
         },
       ],
     };
