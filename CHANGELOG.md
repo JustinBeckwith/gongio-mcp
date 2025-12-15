@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/JustinBeckwith/gongio-mcp/compare/gongio-mcp-v1.2.0...gongio-mcp-v1.3.0) (2025-12-15)
+
+
+### Features
+
+* request AI-generated summaries and add transcript truncation ([#14](https://github.com/JustinBeckwith/gongio-mcp/issues/14)) ([7dc8ad4](https://github.com/JustinBeckwith/gongio-mcp/commit/7dc8ad40dff4342cba48541a38da9c82a40475cd))
+
 ## [1.2.0](https://github.com/JustinBeckwith/gongio-mcp/compare/gongio-mcp-v1.1.1...gongio-mcp-v1.2.0) (2025-12-14)
 
 
