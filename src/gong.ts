@@ -4,16 +4,16 @@
  */
 
 import {
-	type CallsResponse,
 	type CallDetailsResponse,
-	type TranscriptsResponse,
-	type UsersResponse,
+	type CallsResponse,
 	type ListCallsRequest,
 	type ListUsersRequest,
-	parseCallsResponse,
 	parseCallDetailsResponse,
+	parseCallsResponse,
 	parseTranscriptsResponse,
 	parseUsersResponse,
+	type TranscriptsResponse,
+	type UsersResponse,
 } from './schemas.js';
 
 const GONG_API_BASE = 'https://api.gong.io/v2';
@@ -26,9 +26,9 @@ export interface GongConfig {
 // Re-export types from schemas
 export type {
 	Call,
-	CallsResponse,
 	CallDetails,
 	CallDetailsResponse,
+	CallsResponse,
 	CallTranscript,
 	TranscriptEntry,
 	TranscriptsResponse,
@@ -170,6 +170,53 @@ export class GongClient {
 		};
 		const response = await this.request('POST', '/calls/transcript', body);
 		return parseTranscriptsResponse(response);
+	}
+
+	/**
+	 * Search calls with advanced filters (POST /v2/calls/extensive)
+	 * Supports filtering by date range, workspace, primary users (hosts), and specific call IDs
+	 * Returns minimal call metadata (same format as listCalls)
+	 */
+	async searchCalls(options: {
+		fromDateTime?: string;
+		toDateTime?: string;
+		workspaceId?: string;
+		primaryUserIds?: string[];
+		callIds?: string[];
+		cursor?: string;
+	}): Promise<CallDetailsResponse> {
+		// Build filter object
+		const filter: Record<string, unknown> = {};
+
+		if (options.fromDateTime) {
+			filter.fromDateTime = options.fromDateTime;
+		}
+		if (options.toDateTime) {
+			filter.toDateTime = options.toDateTime;
+		}
+		if (options.workspaceId) {
+			filter.workspaceId = options.workspaceId;
+		}
+		if (options.primaryUserIds && options.primaryUserIds.length > 0) {
+			filter.primaryUserIds = options.primaryUserIds;
+		}
+		if (options.callIds && options.callIds.length > 0) {
+			filter.callIds = options.callIds;
+		}
+
+		// Build request body according to Gong API docs
+		const body: Record<string, unknown> = {
+			filter,
+			// Omit contentSelector to get minimal fields (just metadata)
+			// The API returns only metaData by default when contentSelector is not specified
+		};
+
+		if (options.cursor) {
+			body.cursor = options.cursor;
+		}
+
+		const response = await this.request('POST', '/calls/extensive', body);
+		return parseCallDetailsResponse(response);
 	}
 
 	/**

@@ -117,10 +117,14 @@ export const getCallTranscriptRequestSchema = z.object({
 		.int()
 		.min(0)
 		.default(0)
-		.describe('Character offset to start from (default: 0). Use with maxLength to paginate.'),
+		.describe(
+			'Character offset to start from (default: 0). Use with maxLength to paginate.',
+		),
 });
 
-export type GetCallTranscriptRequest = z.infer<typeof getCallTranscriptRequestSchema>;
+export type GetCallTranscriptRequest = z.infer<
+	typeof getCallTranscriptRequestSchema
+>;
 
 /**
  * GET /v2/users - List users request parameters
@@ -154,7 +158,12 @@ export const callScopeSchema = z.enum(['Internal', 'External', 'Unknown']);
 /**
  * Call direction enum
  */
-export const callDirectionSchema = z.enum(['Inbound', 'Outbound', 'Conference', 'Unknown']);
+export const callDirectionSchema = z.enum([
+	'Inbound',
+	'Outbound',
+	'Conference',
+	'Unknown',
+]);
 
 /**
  * Call media type enum

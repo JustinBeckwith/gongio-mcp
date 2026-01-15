@@ -4,8 +4,9 @@
  */
 
 import type {
-	CallsResponse,
 	CallDetails,
+	CallDetailsResponse,
+	CallsResponse,
 	CallTranscript,
 	UsersResponse,
 } from './schemas.js';
@@ -39,9 +40,7 @@ export function formatCallsResponse(response: CallsResponse): string {
 		const date = call.started
 			? new Date(call.started).toLocaleDateString()
 			: '-';
-		const duration = call.duration
-			? `${Math.round(call.duration / 60)}m`
-			: '-';
+		const duration = call.duration ? `${Math.round(call.duration / 60)}m` : '-';
 		const title = call.title?.slice(0, 50) ?? '-';
 		lines.push(
 			`| ${call.id} | ${escapeMarkdown(title)} | ${date} | ${duration} | ${call.scope ?? '-'} |`,
@@ -49,7 +48,49 @@ export function formatCallsResponse(response: CallsResponse): string {
 	}
 
 	if (response.records.cursor) {
-		lines.push(`\n*More results available. Cursor:* \`${response.records.cursor}\``);
+		lines.push(
+			`\n*More results available. Cursor:* \`${response.records.cursor}\``,
+		);
+	}
+
+	return lines.join('\n');
+}
+
+/**
+ * Format call details response as markdown table (same format as formatCallsResponse)
+ * Used for search_calls which returns CallDetailsResponse from /v2/calls/extensive
+ */
+export function formatCallDetailsResponse(
+	response: CallDetailsResponse,
+): string {
+	const lines: string[] = [];
+
+	lines.push(`**Calls** (${response.records.totalRecords} total)\n`);
+
+	if (response.calls.length === 0) {
+		lines.push('No calls found.');
+		return lines.join('\n');
+	}
+
+	lines.push('| ID | Title | Date | Duration | Scope |');
+	lines.push('|---|---|---|---|---|');
+
+	for (const call of response.calls) {
+		const meta = call.metaData;
+		const date = meta.started
+			? new Date(meta.started).toLocaleDateString()
+			: '-';
+		const duration = meta.duration ? `${Math.round(meta.duration / 60)}m` : '-';
+		const title = meta.title?.slice(0, 50) ?? '-';
+		lines.push(
+			`| ${meta.id} | ${escapeMarkdown(title)} | ${date} | ${duration} | ${meta.scope ?? '-'} |`,
+		);
+	}
+
+	if (response.records.cursor) {
+		lines.push(
+			`\n*More results available. Cursor:* \`${response.records.cursor}\``,
+		);
 	}
 
 	return lines.join('\n');
@@ -119,7 +160,8 @@ export function formatCallSummary(call: CallDetails): string {
 	if (call.content?.topics && call.content.topics.length > 0) {
 		lines.push('\n### Topics\n');
 		const topics = call.content.topics.map(
-			(t) => `${escapeMarkdown(t.name)} (${Math.round((t.duration ?? 0) / 60)}m)`,
+			(t) =>
+				`${escapeMarkdown(t.name)} (${Math.round((t.duration ?? 0) / 60)}m)`,
 		);
 		lines.push(topics.join(', '));
 	}
@@ -131,7 +173,9 @@ export function formatCallSummary(call: CallDetails): string {
 			const duration = section.duration
 				? ` (${Math.round(section.duration / 60)}m)`
 				: '';
-			lines.push(`**${escapeMarkdown(section.section ?? 'Section')}**${duration}`);
+			lines.push(
+				`**${escapeMarkdown(section.section ?? 'Section')}**${duration}`,
+			);
 			if (section.items && section.items.length > 0) {
 				for (const item of section.items) {
 					if (item.text) {
@@ -171,7 +215,8 @@ export function formatCallTranscript(
 	if (parties) {
 		for (const party of parties) {
 			if (party.speakerId) {
-				const name = party.name ?? party.emailAddress ?? `Speaker ${party.speakerId}`;
+				const name =
+					party.name ?? party.emailAddress ?? `Speaker ${party.speakerId}`;
 				speakerNames.set(party.speakerId, name);
 			}
 		}
@@ -180,9 +225,12 @@ export function formatCallTranscript(
 	// Build full transcript first to get total length
 	const fullLines: string[] = [];
 	for (const entry of transcript.transcript) {
-		const speakerName = speakerNames.get(entry.speakerId) ?? `Speaker ${entry.speakerId}`;
+		const speakerName =
+			speakerNames.get(entry.speakerId) ?? `Speaker ${entry.speakerId}`;
 		const text = entry.sentences.map((s) => s.text).join(' ');
-		fullLines.push(`[${escapeMarkdown(speakerName)}]: ${escapeMarkdown(text)}\n`);
+		fullLines.push(
+			`[${escapeMarkdown(speakerName)}]: ${escapeMarkdown(text)}\n`,
+		);
 	}
 	const fullText = fullLines.join('\n');
 	const totalLength = fullText.length;
@@ -203,7 +251,9 @@ export function formatCallTranscript(
 	const isTruncatedEnd = offset + maxLength < totalLength;
 
 	if (isTruncatedStart || isTruncatedEnd) {
-		lines.push(`*Showing characters ${offset + 1}-${Math.min(offset + maxLength, totalLength)} of ${totalLength} total*\n`);
+		lines.push(
+			`*Showing characters ${offset + 1}-${Math.min(offset + maxLength, totalLength)} of ${totalLength} total*\n`,
+		);
 	}
 
 	if (isTruncatedStart) {
@@ -248,7 +298,9 @@ export function formatUsersResponse(response: UsersResponse): string {
 	}
 
 	if (response.records.cursor) {
-		lines.push(`\n*More results available. Cursor:* \`${response.records.cursor}\``);
+		lines.push(
+			`\n*More results available. Cursor:* \`${response.records.cursor}\``,
+		);
 	}
 
 	return lines.join('\n');
@@ -258,8 +310,5 @@ export function formatUsersResponse(response: UsersResponse): string {
  * Escape markdown special characters in text
  */
 function escapeMarkdown(text: string): string {
-	return text
-		.replace(/\|/g, '\\|')
-		.replace(/\n/g, ' ')
-		.replace(/\r/g, '');
+	return text.replace(/\|/g, '\\|').replace(/\n/g, ' ').replace(/\r/g, '');
 }

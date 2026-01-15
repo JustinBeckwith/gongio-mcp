@@ -1,18 +1,18 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 import {
-	iso8601DateTimeSchema,
-	gongIdSchema,
-	listCallsRequestSchema,
-	searchCallsRequestSchema,
 	getCallSummaryRequestSchema,
 	getCallTranscriptRequestSchema,
+	gongIdSchema,
+	iso8601DateTimeSchema,
+	listCallsRequestSchema,
 	listUsersRequestSchema,
-	validateListCallsRequest,
-	validateSearchCallsRequest,
+	searchCallsRequestSchema,
 	validateGetCallSummaryRequest,
 	validateGetCallTranscriptRequest,
+	validateListCallsRequest,
 	validateListUsersRequest,
+	validateSearchCallsRequest,
 } from '../src/schemas.js';
 
 describe('iso8601DateTimeSchema', () => {
@@ -32,9 +32,7 @@ describe('iso8601DateTimeSchema', () => {
 	});
 
 	it('accepts valid ISO 8601 datetime with milliseconds', () => {
-		const result = iso8601DateTimeSchema.safeParse(
-			'2024-01-01T00:00:00.123Z',
-		);
+		const result = iso8601DateTimeSchema.safeParse('2024-01-01T00:00:00.123Z');
 		expect(result.success).toBe(true);
 	});
 
@@ -321,9 +319,7 @@ describe('validate helper functions', () => {
 	});
 
 	it('validateGetCallSummaryRequest throws on missing callId', () => {
-		expect(() =>
-			validateGetCallSummaryRequest({}),
-		).toThrow(ZodError);
+		expect(() => validateGetCallSummaryRequest({})).toThrow(ZodError);
 	});
 
 	it('validateGetCallTranscriptRequest validates callId', () => {

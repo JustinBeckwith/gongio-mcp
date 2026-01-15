@@ -20,7 +20,7 @@
 		"test:coverage": "vitest run --coverage",
 		"lint": "biome lint .",
 		"fix": "biome check --write .",
-		"format": "biome format --write .",
+		"format": "biome check --write .",
 		"validate:mcp": "node --experimental-strip-types scripts/validate-mcp.ts",
 		"prepare": "husky",
 		"typecheck": "tsc --noEmit -p tsconfig.check.json"

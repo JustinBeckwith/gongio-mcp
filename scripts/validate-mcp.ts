@@ -86,7 +86,10 @@ if (pkg.version !== server.version) {
 	);
 }
 
-if (server.packages?.[0]?.version && pkg.version !== server.packages[0].version) {
+if (
+	server.packages?.[0]?.version &&
+	pkg.version !== server.packages[0].version
+) {
 	errors.push(
 		`package.json version "${pkg.version}" does not match server.json packages[0].version "${server.packages[0].version}"`,
 	);

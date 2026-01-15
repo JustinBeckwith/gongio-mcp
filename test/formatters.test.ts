@@ -1,13 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-	formatCallsResponse,
+	formatCallDetailsResponse,
 	formatCallSummary,
+	formatCallsResponse,
 	formatCallTranscript,
 	formatUsersResponse,
 } from '../src/formatters.js';
 import type {
-	CallsResponse,
 	CallDetails,
+	CallDetailsResponse,
+	CallsResponse,
 	CallTranscript,
 	UsersResponse,
 } from '../src/schemas.js';
@@ -101,6 +103,125 @@ describe('formatCallsResponse', () => {
 	});
 });
 
+describe('formatCallDetailsResponse', () => {
+	it('formats empty calls list', () => {
+		const response: CallDetailsResponse = {
+			requestId: 'test-123',
+			records: {
+				totalRecords: 0,
+				currentPageSize: 0,
+				currentPageNumber: 1,
+			},
+			calls: [],
+		};
+
+		const result = formatCallDetailsResponse(response);
+		expect(result).toContain('**Calls** (0 total)');
+		expect(result).toContain('No calls found.');
+	});
+
+	it('formats calls as markdown table from CallDetailsResponse', () => {
+		const response: CallDetailsResponse = {
+			requestId: 'test-123',
+			records: {
+				totalRecords: 2,
+				currentPageSize: 2,
+				currentPageNumber: 1,
+			},
+			calls: [
+				{
+					metaData: {
+						id: '123',
+						title: 'Sales Call',
+						started: '2024-01-15T10:00:00Z',
+						duration: 1800,
+						scope: 'External',
+					},
+				},
+				{
+					metaData: {
+						id: '456',
+						title: 'Demo Call',
+						started: '2024-01-16T14:00:00Z',
+						duration: 3600,
+						scope: 'Internal',
+					},
+				},
+			],
+		};
+
+		const result = formatCallDetailsResponse(response);
+		expect(result).toContain('**Calls** (2 total)');
+		expect(result).toContain('| ID | Title | Date | Duration | Scope |');
+		expect(result).toContain('| 123 | Sales Call |');
+		expect(result).toContain('| 456 | Demo Call |');
+		expect(result).toContain('30m'); // 1800 seconds = 30 minutes
+		expect(result).toContain('60m'); // 3600 seconds = 60 minutes
+		expect(result).toContain('External');
+		expect(result).toContain('Internal');
+	});
+
+	it('includes cursor when available', () => {
+		const response: CallDetailsResponse = {
+			requestId: 'test-123',
+			records: {
+				totalRecords: 100,
+				currentPageSize: 10,
+				currentPageNumber: 1,
+				cursor: 'next-page-cursor',
+			},
+			calls: [{ metaData: { id: '123' } }],
+		};
+
+		const result = formatCallDetailsResponse(response);
+		expect(result).toContain('`next-page-cursor`');
+	});
+
+	it('escapes pipe characters in titles', () => {
+		const response: CallDetailsResponse = {
+			requestId: 'test-123',
+			records: {
+				totalRecords: 1,
+				currentPageSize: 1,
+				currentPageNumber: 1,
+			},
+			calls: [
+				{
+					metaData: {
+						id: '123',
+						title: 'Call | With | Pipes',
+					},
+				},
+			],
+		};
+
+		const result = formatCallDetailsResponse(response);
+		expect(result).toContain('Call \\| With \\| Pipes');
+	});
+
+	it('handles missing optional metadata fields', () => {
+		const response: CallDetailsResponse = {
+			requestId: 'test-123',
+			records: {
+				totalRecords: 1,
+				currentPageSize: 1,
+				currentPageNumber: 1,
+			},
+			calls: [
+				{
+					metaData: {
+						id: '999',
+					},
+				},
+			],
+		};
+
+		const result = formatCallDetailsResponse(response);
+		expect(result).toContain('| 999 |');
+		expect(result).toContain('| - |'); // Missing fields show as '-'
+	});
+});
+
 describe('formatUsersResponse', () => {
 	it('formats empty users list', () => {
 		const response: UsersResponse = {
@@ -149,8 +270,12 @@ describe('formatUsersResponse', () => {
 		const result = formatUsersResponse(response);
 		expect(result).toContain('**Users** (2 total)');
 		expect(result).toContain('| ID | Name | Email | Title | Active |');
-		expect(result).toContain('| 111 | John Doe | john@example.com | Sales Rep | Yes |');
-		expect(result).toContain('| 222 | Jane Smith | jane@example.com | Account Executive | No |');
+		expect(result).toContain(
+			'| 111 | John Doe | john@example.com | Sales Rep | Yes |',
+		);
+		expect(result).toContain(
+			'| 222 | Jane Smith | jane@example.com | Account Executive | No |',
+		);
 	});
 });
 
@@ -210,7 +335,9 @@ describe('formatCallSummary', () => {
 
 		const result = formatCallSummary(call);
 		expect(result).toContain('### Summary');
-		expect(result).toContain('Productive discussion about enterprise features.');
+		expect(result).toContain(
+			'Productive discussion about enterprise features.',
+		);
 		expect(result).toContain('### Key Points');
 		expect(result).toContain('- Customer interested in enterprise plan');
 		expect(result).toContain('- Follow-up scheduled for next week');
@@ -274,9 +401,7 @@ describe('formatCallTranscript', () => {
 			transcript: [
 				{
 					speakerId: 'unknown-speaker',
-					sentences: [
-						{ start: 0, end: 3000, text: 'Some text here.' },
-					],
+					sentences: [{ start: 0, end: 3000, text: 'Some text here.' }],
 				},
 			],
 		};
@@ -312,7 +437,9 @@ describe('formatCallTranscript', () => {
 		};
 
 		const result = formatCallTranscript(transcript, null);
-		expect(result).toContain('First sentence. Second sentence. Third sentence.');
+		expect(result).toContain(
+			'First sentence. Second sentence. Third sentence.',
+		);
 	});
 
 	it('truncates long transcripts with maxLength', () => {
@@ -351,7 +478,10 @@ describe('formatCallTranscript', () => {
 			],
 		};
 
-		const result = formatCallTranscript(transcript, null, { maxLength: 100, offset: 50 });
+		const result = formatCallTranscript(transcript, null, {
+			maxLength: 100,
+			offset: 50,
+		});
 		expect(result).toContain('*[...truncated start...]*');
 		expect(result).toContain('*Showing characters 51-150');
 	});

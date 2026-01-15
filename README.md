@@ -7,14 +7,14 @@ An MCP (Model Context Protocol) server that provides access to your Gong.io data
 ## Features
 
 - **List Calls** - Browse calls with date filtering and pagination
-- **Get Call Details** - Retrieve comprehensive call information including participants, topics, trackers, and action items
-- **Get Transcripts** - Access full speaker-attributed, timestamped transcripts
+- **Get Call Summary** - Retrieve AI-generated summaries with key points, topics, and action items
+- **Get Call Transcript** - Access full speaker-attributed, timestamped transcripts with pagination
 - **List Users** - View all users in your Gong workspace
-- **Search Calls** - Find calls by date range, host, or specific IDs
+- **Search Calls** - Advanced search by date range, call hosts (primaryUserIds), specific call IDs, or workspace
 
 ## Prerequisites
 
-- Node.js 24+ (or Bun)
+- Node.js 18+ (or Bun)
 - Gong API credentials (Access Key and Secret)
 
 ## Getting Gong API Credentials
@@ -35,7 +35,7 @@ npm install -g gongio-mcp
 ### From source
 
 ```bash
-git clone https://github.com/your-username/gongio-mcp.git
+git clone https://github.com/JustinBeckwith/gongio-mcp.git
 cd gongio-mcp
 npm install
 npm run build
@@ -82,68 +82,66 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
 ## Available Tools
 
 ### `list_calls`
-List Gong calls with optional date filtering.
+List Gong calls with optional date filtering. Returns minimal call metadata (ID, title, date, duration).
 
 **Parameters:**
-- `fromDateTime` (optional): Start date in ISO 8601 format
-- `toDateTime` (optional): End date in ISO 8601 format
-- `cursor` (optional): Pagination cursor
+- `fromDateTime` (optional): Start date in ISO 8601 format (e.g., `2024-01-01T00:00:00Z`)
+- `toDateTime` (optional): End date in ISO 8601 format (e.g., `2024-01-31T23:59:59Z`)
+- `workspaceId` (optional): Filter calls by workspace ID
+- `cursor` (optional): Pagination cursor for fetching next page of results
 
-### `get_call_details`
-Get detailed information about specific calls.
-
-**Parameters:**
-- `callIds` (required): Array of call IDs
-
-### `get_transcripts`
-Retrieve full transcripts for specified calls.
+### `get_call_summary`
+Get an AI-generated summary of a single call including brief overview, key points, topics, action items, and detailed outline. This is the recommended way to understand a call.
 
 **Parameters:**
-- `callIds` (required): Array of call IDs
+- `callId` (required): Gong call ID (numeric string)
+
+### `get_call_transcript`
+Get the raw transcript for a single call with speaker-attributed text. Only use this when you need exact quotes - prefer `get_call_summary` for understanding call content.
+
+**Parameters:**
+- `callId` (required): Gong call ID (numeric string)
+- `maxLength` (optional): Maximum characters to return (default: 10000, max: 100000)
+- `offset` (optional): Character offset to start from for pagination (default: 0)
 
 ### `list_users`
-List all Gong users in your workspace.
+List all Gong users in your workspace. Returns user details including name, email, and title.
 
 **Parameters:**
-- `cursor` (optional): Pagination cursor
+- `cursor` (optional): Pagination cursor for fetching next page of results
+- `includeAvatars` (optional): Whether to include user avatar URLs in the response
 
 ### `search_calls`
-Search for calls with various filters.
+Search for calls with advanced filters including date range, call hosts, specific call IDs, and workspace. More flexible than `list_calls` for targeted queries.
 
 **Parameters:**
-- `fromDateTime` (optional): Start date in ISO 8601 format
-- `toDateTime` (optional): End date in ISO 8601 format
-- `primaryUserIds` (optional): Array of user IDs to filter by host
-- `callIds` (optional): Array of specific call IDs
-- `cursor` (optional): Pagination cursor
+- `fromDateTime` (optional): Start date in ISO 8601 format (e.g., `2024-01-01T00:00:00Z`)
+- `toDateTime` (optional): End date in ISO 8601 format (e.g., `2024-01-31T23:59:59Z`)
+- `workspaceId` (optional): Filter calls by workspace ID
+- `primaryUserIds` (optional): Array of user IDs to filter by call host (e.g., `["123456789"]`)
+- `callIds` (optional): Array of specific call IDs to retrieve (e.g., `["987654321", "123456789"]`)
+- `cursor` (optional): Pagination cursor for fetching next page of results
 
 ## Available Resources
 
 ### `gong://users`
-Returns a JSON list of all users in your Gong workspace.
+Returns a markdown-formatted list of all users in your Gong workspace.
 
 ## Example Prompts
 
 Once connected to Claude, you can ask things like:
 
 - "List my Gong calls from last week"
-- "Get the transcript for call ID abc123"
+- "Show me a summary of call ID 123456"
+- "Get the transcript for call ID 789012"
 - "Who are all the users in our Gong workspace?"
-- "Show me details for the calls I had yesterday"
-- "Find all calls hosted by user xyz"
+- "Search for calls hosted by Justin (user ID 232255198215877499) in July 2025"
+- "Find all calls from the last 7 days"
+- "Search for specific calls by their IDs: 123456 and 789012"
 
-## Development
+## Contributing
 
-```bash
-# Run with hot reload (requires Bun)
-bun run dev
-
-# Type check
-npm run typecheck
-
-# Build for distribution
-npm run build
-```
+Interested in contributing? Check out [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing instructions, and guidelines.
 
 ## License
 
