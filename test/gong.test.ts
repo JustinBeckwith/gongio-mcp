@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GongClient } from '../src/gong.js';
-import type { CallDetailsResponse } from '../src/schemas.js';
+import type {
+	CallDetailsResponse,
+	LibraryFolderCallsResponse,
+	LibraryFoldersResponse,
+	SingleCallResponse,
+	SingleUserResponse,
+	TrackersSettingsResponse,
+	UsersResponse,
+	WorkspacesResponse,
+} from '../src/schemas.js';
 
 describe('GongClient', () => {
 	let client: GongClient;
@@ -299,6 +308,337 @@ describe('GongClient', () => {
 			const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
 			expect(callBody.contentSelector).toBeUndefined();
 			expect(callBody.filter).toBeDefined();
+		});
+	});
+
+	describe('getCall', () => {
+		it('sends GET request to /v2/calls/{id}', async () => {
+			const mockResponse: SingleCallResponse = {
+				requestId: 'test-123',
+				call: { id: '123', title: 'Test Call' },
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			await client.getCall('123');
+
+			expect(fetchMock).toHaveBeenCalledWith(
+				'https://api.gong.io/v2/calls/123',
+				expect.objectContaining({ method: 'GET' }),
+			);
+		});
+
+		it('returns parsed SingleCallResponse', async () => {
+			const mockResponse: SingleCallResponse = {
+				call: { id: '456', title: 'Demo Call', duration: 3600 },
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			const result = await client.getCall('456');
+			expect(result.call.id).toBe('456');
+			expect(result.call.title).toBe('Demo Call');
+		});
+	});
+
+	describe('getUser', () => {
+		it('sends GET request to /v2/users/{id}', async () => {
+			const mockResponse: SingleUserResponse = {
+				requestId: 'test-123',
+				user: { id: '111', emailAddress: 'john@example.com' },
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			await client.getUser('111');
+
+			expect(fetchMock).toHaveBeenCalledWith(
+				'https://api.gong.io/v2/users/111',
+				expect.objectContaining({ method: 'GET' }),
+			);
+		});
+
+		it('returns parsed SingleUserResponse', async () => {
+			const mockResponse: SingleUserResponse = {
+				user: {
+					id: '222',
+					firstName: 'Jane',
+					lastName: 'Doe',
+					emailAddress: 'jane@example.com',
+				},
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			const result = await client.getUser('222');
+			expect(result.user.id).toBe('222');
+			expect(result.user.firstName).toBe('Jane');
+		});
+	});
+
+	describe('searchUsers', () => {
+		it('sends POST request to /v2/users/extensive', async () => {
+			const mockResponse: UsersResponse = {
+				requestId: 'test-123',
+				records: { totalRecords: 0, currentPageSize: 0, currentPageNumber: 1 },
+				users: [],
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			await client.searchUsers({});
+
+			expect(fetchMock).toHaveBeenCalledWith(
+				'https://api.gong.io/v2/users/extensive',
+				expect.objectContaining({ method: 'POST' }),
+			);
+		});
+
+		it('includes userIds in filter', async () => {
+			const mockResponse: UsersResponse = {
+				requestId: 'test-123',
+				records: { totalRecords: 0, currentPageSize: 0, currentPageNumber: 1 },
+				users: [],
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			await client.searchUsers({ userIds: ['111', '222'] });
+
+			const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+			expect(body.filter.userIds).toEqual(['111', '222']);
+		});
+
+		it('does not include empty userIds array in filter', async () => {
+			const mockResponse: UsersResponse = {
+				requestId: 'test-123',
+				records: { totalRecords: 0, currentPageSize: 0, currentPageNumber: 1 },
+				users: [],
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			await client.searchUsers({ userIds: [] });
+
+			const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+			expect(body.filter.userIds).toBeUndefined();
+		});
+
+		it('includes cursor at top level not in filter', async () => {
+			const mockResponse: UsersResponse = {
+				requestId: 'test-123',
+				records: { totalRecords: 0, currentPageSize: 0, currentPageNumber: 1 },
+				users: [],
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			await client.searchUsers({ cursor: 'page-2' });
+
+			const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+			expect(body.cursor).toBe('page-2');
+			expect(body.filter.cursor).toBeUndefined();
+		});
+	});
+
+	describe('getTrackers', () => {
+		it('sends GET request to /v2/settings/trackers', async () => {
+			const mockResponse: TrackersSettingsResponse = {
+				requestId: 'test-123',
+				keywordTrackers: [],
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			await client.getTrackers();
+
+			expect(fetchMock).toHaveBeenCalledWith(
+				'https://api.gong.io/v2/settings/trackers',
+				expect.objectContaining({ method: 'GET' }),
+			);
+		});
+
+		it('includes workspaceId as query parameter', async () => {
+			const mockResponse: TrackersSettingsResponse = { keywordTrackers: [] };
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			await client.getTrackers({ workspaceId: '12345' });
+
+			const calledUrl = fetchMock.mock.calls[0][0] as string;
+			expect(calledUrl).toContain('workspaceId=12345');
+		});
+	});
+
+	describe('listWorkspaces', () => {
+		it('sends GET request to /v2/workspaces', async () => {
+			const mockResponse: WorkspacesResponse = {
+				requestId: 'test-123',
+				workspaces: [{ id: '111', name: 'North America' }],
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			await client.listWorkspaces();
+
+			expect(fetchMock).toHaveBeenCalledWith(
+				'https://api.gong.io/v2/workspaces',
+				expect.objectContaining({ method: 'GET' }),
+			);
+		});
+
+		it('returns parsed WorkspacesResponse', async () => {
+			const mockResponse: WorkspacesResponse = {
+				workspaces: [
+					{ id: '111', name: 'North America', description: 'NA region' },
+					{ id: '222', name: 'EMEA' },
+				],
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			const result = await client.listWorkspaces();
+			expect(result.workspaces).toHaveLength(2);
+			expect(result.workspaces?.[0]?.id).toBe('111');
+		});
+	});
+
+	describe('listLibraryFolders', () => {
+		it('sends GET request to /v2/library/folders', async () => {
+			const mockResponse: LibraryFoldersResponse = {
+				requestId: 'test-123',
+				folders: [],
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			await client.listLibraryFolders({ workspaceId: '123' });
+
+			expect(fetchMock).toHaveBeenCalledWith(
+				expect.stringContaining('/v2/library/folders'),
+				expect.objectContaining({ method: 'GET' }),
+			);
+		});
+
+		it('includes workspaceId as query parameter', async () => {
+			const mockResponse: LibraryFoldersResponse = { folders: [] };
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			await client.listLibraryFolders({ workspaceId: '999' });
+
+			const calledUrl = fetchMock.mock.calls[0][0] as string;
+			expect(calledUrl).toContain('workspaceId=999');
+		});
+	});
+
+	describe('getLibraryFolderCalls', () => {
+		it('sends GET request to /v2/library/folder-content', async () => {
+			const mockResponse: LibraryFolderCallsResponse = {
+				requestId: 'test-123',
+				id: '555',
+				name: 'Best Discovery Calls',
+				calls: [],
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			await client.getLibraryFolderCalls({ folderId: '555' });
+
+			expect(fetchMock).toHaveBeenCalledWith(
+				expect.stringContaining('/v2/library/folder-content'),
+				expect.objectContaining({ method: 'GET' }),
+			);
+		});
+
+		it('passes folderId as query parameter', async () => {
+			const mockResponse: LibraryFolderCallsResponse = {
+				id: '3843152912968920037',
+				name: 'Onboarding',
+				calls: [],
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			await client.getLibraryFolderCalls({
+				folderId: '3843152912968920037',
+			});
+
+			const calledUrl = fetchMock.mock.calls[0][0] as string;
+			expect(calledUrl).toContain('folderId=3843152912968920037');
+		});
+
+		it('returns parsed LibraryFolderCallsResponse', async () => {
+			const mockResponse: LibraryFolderCallsResponse = {
+				id: '555',
+				name: 'Best Calls',
+				calls: [
+					{
+						id: '111222333',
+						title: 'Great discovery call',
+						addedBy: 'user-1',
+						created: '2024-03-01T10:00:00Z',
+					},
+				],
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			const result = await client.getLibraryFolderCalls({ folderId: '555' });
+			expect(result.name).toBe('Best Calls');
+			expect(result.calls).toHaveLength(1);
+			expect(result.calls?.[0]?.id).toBe('111222333');
 		});
 	});
 });

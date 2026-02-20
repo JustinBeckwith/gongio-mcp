@@ -4,14 +4,26 @@ import {
 	formatCallSummary,
 	formatCallsResponse,
 	formatCallTranscript,
+	formatLibraryFolderCallsResponse,
+	formatLibraryFoldersResponse,
+	formatSingleCall,
+	formatSingleUser,
+	formatTrackersResponse,
 	formatUsersResponse,
+	formatWorkspacesResponse,
 } from '../src/formatters.js';
 import type {
 	CallDetails,
 	CallDetailsResponse,
 	CallsResponse,
 	CallTranscript,
+	LibraryFolderCallsResponse,
+	LibraryFoldersResponse,
+	SingleCallResponse,
+	SingleUserResponse,
+	TrackersSettingsResponse,
 	UsersResponse,
+	WorkspacesResponse,
 } from '../src/schemas.js';
 
 describe('formatCallsResponse', () => {
@@ -500,5 +512,344 @@ describe('formatCallTranscript', () => {
 		const result = formatCallTranscript(transcript, null, { maxLength: 10000 });
 		expect(result).not.toContain('truncated');
 		expect(result).not.toContain('Showing characters');
+	});
+});
+
+describe('formatSingleCall', () => {
+	it('formats call with full metadata', () => {
+		const response: SingleCallResponse = {
+			call: {
+				id: '123',
+				title: 'Enterprise Demo',
+				started: '2024-01-15T10:00:00Z',
+				duration: 1800,
+				direction: 'Outbound',
+				scope: 'External',
+				system: 'Zoom',
+				media: 'Video',
+				language: 'eng',
+				url: 'https://gong.io/call/123',
+				primaryUserId: '999',
+				workspaceId: '888',
+			},
+		};
+
+		const result = formatSingleCall(response);
+		expect(result).toContain('## Enterprise Demo');
+		expect(result).toContain('**ID:** 123');
+		expect(result).toContain('**Direction:** Outbound');
+		expect(result).toContain('**Scope:** External');
+		expect(result).toContain('**System:** Zoom');
+		expect(result).toContain('**Media:** Video');
+		expect(result).toContain('**URL:** https://gong.io/call/123');
+		expect(result).toContain('**Host User ID:** 999');
+		expect(result).toContain('**Workspace ID:** 888');
+	});
+
+	it('shows Untitled Call when title is missing', () => {
+		const response: SingleCallResponse = {
+			call: { id: '456' },
+		};
+
+		const result = formatSingleCall(response);
+		expect(result).toContain('## Untitled Call');
+		expect(result).toContain('**ID:** 456');
+	});
+
+	it('shows private flag', () => {
+		const response: SingleCallResponse = {
+			call: { id: '789', isPrivate: true },
+		};
+
+		const result = formatSingleCall(response);
+		expect(result).toContain('**Private:** Yes');
+	});
+});
+
+describe('formatSingleUser', () => {
+	it('formats user with full profile', () => {
+		const response: SingleUserResponse = {
+			user: {
+				id: '111',
+				firstName: 'John',
+				lastName: 'Doe',
+				emailAddress: 'john@example.com',
+				title: 'Account Executive',
+				phoneNumber: '+14155550100',
+				active: true,
+				managerId: '999',
+				spokenLanguages: [
+					{ language: 'eng', primary: true },
+					{ language: 'spa', primary: false },
+				],
+			},
+		};
+
+		const result = formatSingleUser(response);
+		expect(result).toContain('## John Doe');
+		expect(result).toContain('**ID:** 111');
+		expect(result).toContain('**Email:** john@example.com');
+		expect(result).toContain('**Title:** Account Executive');
+		expect(result).toContain('**Active:** Yes');
+		expect(result).toContain('**Phone:** +14155550100');
+		expect(result).toContain('**Manager ID:** 999');
+		expect(result).toContain('eng (primary)');
+		expect(result).toContain('spa');
+	});
+
+	it('shows Unknown when name is missing', () => {
+		const response: SingleUserResponse = {
+			user: { id: '222' },
+		};
+
+		const result = formatSingleUser(response);
+		expect(result).toContain('## Unknown');
+	});
+
+	it('shows inactive status', () => {
+		const response: SingleUserResponse = {
+			user: { id: '333', firstName: 'Inactive', active: false },
+		};
+
+		const result = formatSingleUser(response);
+		expect(result).toContain('**Active:** No');
+	});
+});
+
+describe('formatTrackersResponse', () => {
+	it('formats trackers as table', () => {
+		const response: TrackersSettingsResponse = {
+			keywordTrackers: [
+				{
+					trackerId: 't-1',
+					trackerName: 'Competitor: ACME',
+					affiliation: 'External',
+					saidAt: 'Anywhere',
+					languageKeywords: [
+						{
+							language: 'eng',
+							keywords: ['acme', 'acme corp', 'acme co'],
+						},
+					],
+				},
+			],
+		};
+
+		const result = formatTrackersResponse(response);
+		expect(result).toContain('**Keyword Trackers** (1 total)');
+		expect(result).toContain('Competitor: ACME');
+		expect(result).toContain('External');
+		expect(result).toContain('acme');
+	});
+
+	it('handles empty trackers list', () => {
+		const response: TrackersSettingsResponse = { keywordTrackers: [] };
+
+		const result = formatTrackersResponse(response);
+		expect(result).toContain('No trackers found.');
+	});
+
+	it('limits keywords to 5 per tracker', () => {
+		const response: TrackersSettingsResponse = {
+			keywordTrackers: [
+				{
+					trackerName: 'Pricing',
+					languageKeywords: [
+						{
+							language: 'eng',
+							keywords: [
+								'price',
+								'cost',
+								'discount',
+								'budget',
+								'expensive',
+								'cheap',
+							],
+						},
+					],
+				},
+			],
+		};
+
+		const result = formatTrackersResponse(response);
+		// Should show max 5 keywords
+		expect(result).toContain('price');
+		expect(result).not.toContain('cheap'); // 6th keyword should be omitted
+	});
+});
+
+describe('formatWorkspacesResponse', () => {
+	it('formats workspaces as table', () => {
+		const response: WorkspacesResponse = {
+			workspaces: [
+				{ id: '111', name: 'North America', description: 'NA sales team' },
+				{ id: '222', name: 'EMEA', description: 'Europe, Middle East, Africa' },
+			],
+		};
+
+		const result = formatWorkspacesResponse(response);
+		expect(result).toContain('**Workspaces** (2 total)');
+		expect(result).toContain('| ID | Name | Description |');
+		expect(result).toContain('| 111 | North America | NA sales team |');
+		expect(result).toContain('| 222 | EMEA |');
+	});
+
+	it('handles empty workspaces list', () => {
+		const response: WorkspacesResponse = { workspaces: [] };
+
+		const result = formatWorkspacesResponse(response);
+		expect(result).toContain('No workspaces found.');
+	});
+
+	it('handles null workspaces', () => {
+		const response: WorkspacesResponse = {};
+
+		const result = formatWorkspacesResponse(response);
+		expect(result).toContain('No workspaces found.');
+	});
+});
+
+describe('formatLibraryFoldersResponse', () => {
+	it('formats folders as table with IDs and names', () => {
+		const response: LibraryFoldersResponse = {
+			folders: [
+				{
+					id: '111',
+					name: 'Best Discovery Calls',
+					parentFolderId: null,
+					createdBy: 'user-1',
+				},
+				{
+					id: '222',
+					name: 'Onboarding Sub-Folder',
+					parentFolderId: '111',
+					createdBy: 'user-2',
+				},
+			],
+		};
+
+		const result = formatLibraryFoldersResponse(response);
+		expect(result).toContain('**Library Folders** (2 total)');
+		expect(result).toContain('| ID | Name | Parent Folder |');
+		expect(result).toContain('| 111 | Best Discovery Calls | Root |');
+		expect(result).toContain('| 222 | Onboarding Sub-Folder | 111 |');
+	});
+
+	it('shows Root when parentFolderId is null', () => {
+		const response: LibraryFoldersResponse = {
+			folders: [{ id: '333', name: 'Top Level', parentFolderId: null }],
+		};
+
+		const result = formatLibraryFoldersResponse(response);
+		expect(result).toContain('Root');
+	});
+
+	it('handles empty folders list', () => {
+		const response: LibraryFoldersResponse = { folders: [] };
+
+		const result = formatLibraryFoldersResponse(response);
+		expect(result).toContain('**Library Folders** (0 total)');
+		expect(result).toContain('No library folders found.');
+	});
+
+	it('handles null folders', () => {
+		const response: LibraryFoldersResponse = {};
+
+		const result = formatLibraryFoldersResponse(response);
+		expect(result).toContain('No library folders found.');
+	});
+});
+
+describe('formatLibraryFolderCallsResponse', () => {
+	it('formats calls table with all fields', () => {
+		const response: LibraryFolderCallsResponse = {
+			id: '555',
+			name: 'Best Demos',
+			calls: [
+				{
+					id: '999111',
+					title: 'Closing the enterprise deal',
+					addedBy: 'user-42',
+					created: '2024-03-01T10:00:00Z',
+					url: 'https://app.gong.io/call?id=999111',
+					note: 'Great objection handling here',
+					snippet: null,
+				},
+			],
+		};
+
+		const result = formatLibraryFolderCallsResponse(response);
+		expect(result).toContain('## Library Folder: Best Demos');
+		expect(result).toContain('**Folder ID:** 555');
+		expect(result).toContain('**Calls:** 1');
+		expect(result).toContain(
+			'| Call ID | Title | Added By | Added On | Snippet | Note |',
+		);
+		expect(result).toContain('999111');
+		expect(result).toContain('Closing the enterprise deal');
+		expect(result).toContain('user-42');
+		expect(result).toContain('Great objection handling here');
+	});
+
+	it('formats snippet timing as M:SS–M:SS', () => {
+		const response: LibraryFolderCallsResponse = {
+			id: '555',
+			name: 'Clips',
+			calls: [
+				{
+					id: '123',
+					title: 'Clip call',
+					snippet: { fromSec: 305, toSec: 540 },
+				},
+			],
+		};
+
+		const result = formatLibraryFolderCallsResponse(response);
+		expect(result).toContain('5:05');
+		expect(result).toContain('9:00');
+	});
+
+	it('shows dash for snippet when null', () => {
+		const response: LibraryFolderCallsResponse = {
+			id: '555',
+			name: 'Full Calls',
+			calls: [{ id: '123', title: 'Full call', snippet: null }],
+		};
+
+		const result = formatLibraryFolderCallsResponse(response);
+		// The snippet column should show '-'
+		expect(result).toMatch(/\| - \|/);
+	});
+
+	it('truncates long notes with ellipsis', () => {
+		const longNote = 'A'.repeat(80);
+		const response: LibraryFolderCallsResponse = {
+			id: '555',
+			name: 'Test',
+			calls: [{ id: '123', title: 'Call', note: longNote }],
+		};
+
+		const result = formatLibraryFolderCallsResponse(response);
+		expect(result).toContain('\u2026');
+		expect(result).not.toContain(longNote);
+	});
+
+	it('handles empty calls list', () => {
+		const response: LibraryFolderCallsResponse = {
+			id: '555',
+			name: 'Empty Folder',
+			calls: [],
+		};
+
+		const result = formatLibraryFolderCallsResponse(response);
+		expect(result).toContain('**Calls:** 0');
+		expect(result).toContain('No calls in this folder.');
+	});
+
+	it('uses Unknown Folder when name is missing', () => {
+		const response: LibraryFolderCallsResponse = { calls: [] };
+
+		const result = formatLibraryFolderCallsResponse(response);
+		expect(result).toContain('## Library Folder: Unknown Folder');
 	});
 });

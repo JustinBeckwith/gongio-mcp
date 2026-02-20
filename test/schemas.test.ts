@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 import {
+	getCallRequestSchema,
 	getCallSummaryRequestSchema,
 	getCallTranscriptRequestSchema,
+	getLibraryFolderCallsRequestSchema,
+	getTrackersRequestSchema,
+	getUserRequestSchema,
 	gongIdSchema,
 	iso8601DateTimeSchema,
 	listCallsRequestSchema,
+	listLibraryFoldersRequestSchema,
 	listUsersRequestSchema,
 	searchCallsRequestSchema,
+	searchUsersRequestSchema,
 	validateGetCallSummaryRequest,
 	validateGetCallTranscriptRequest,
 	validateListCallsRequest,
@@ -285,6 +291,138 @@ describe('listUsersRequestSchema', () => {
 	it('rejects empty cursor', () => {
 		const result = listUsersRequestSchema.safeParse({
 			cursor: '',
+		});
+		expect(result.success).toBe(false);
+	});
+});
+
+describe('getCallRequestSchema', () => {
+	it('accepts valid callId', () => {
+		const result = getCallRequestSchema.safeParse({ callId: '123456789' });
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects missing callId', () => {
+		const result = getCallRequestSchema.safeParse({});
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects non-numeric callId', () => {
+		const result = getCallRequestSchema.safeParse({ callId: 'abc' });
+		expect(result.success).toBe(false);
+	});
+});
+
+describe('getUserRequestSchema', () => {
+	it('accepts valid userId', () => {
+		const result = getUserRequestSchema.safeParse({
+			userId: '232255198215877499',
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects missing userId', () => {
+		const result = getUserRequestSchema.safeParse({});
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects non-numeric userId', () => {
+		const result = getUserRequestSchema.safeParse({ userId: 'not-an-id' });
+		expect(result.success).toBe(false);
+	});
+});
+
+describe('searchUsersRequestSchema', () => {
+	it('accepts empty object', () => {
+		const result = searchUsersRequestSchema.safeParse({});
+		expect(result.success).toBe(true);
+	});
+
+	it('accepts valid userIds array', () => {
+		const result = searchUsersRequestSchema.safeParse({
+			userIds: ['111', '222'],
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects invalid userId in array', () => {
+		const result = searchUsersRequestSchema.safeParse({
+			userIds: ['not-an-id'],
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('accepts valid ISO 8601 createdFromDateTime', () => {
+		const result = searchUsersRequestSchema.safeParse({
+			createdFromDateTime: '2024-01-01T00:00:00Z',
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects invalid createdFromDateTime', () => {
+		const result = searchUsersRequestSchema.safeParse({
+			createdFromDateTime: '2024-01-01',
+		});
+		expect(result.success).toBe(false);
+	});
+});
+
+describe('getTrackersRequestSchema', () => {
+	it('accepts empty object', () => {
+		const result = getTrackersRequestSchema.safeParse({});
+		expect(result.success).toBe(true);
+	});
+
+	it('accepts valid workspaceId', () => {
+		const result = getTrackersRequestSchema.safeParse({ workspaceId: '12345' });
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects non-numeric workspaceId', () => {
+		const result = getTrackersRequestSchema.safeParse({
+			workspaceId: 'my-workspace',
+		});
+		expect(result.success).toBe(false);
+	});
+});
+
+describe('listLibraryFoldersRequestSchema', () => {
+	it('accepts valid numeric workspaceId', () => {
+		const result = listLibraryFoldersRequestSchema.safeParse({
+			workspaceId: '987654321',
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects missing workspaceId', () => {
+		const result = listLibraryFoldersRequestSchema.safeParse({});
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects non-numeric workspaceId', () => {
+		const result = listLibraryFoldersRequestSchema.safeParse({
+			workspaceId: 'my-workspace',
+		});
+		expect(result.success).toBe(false);
+	});
+});
+
+describe('getLibraryFolderCallsRequestSchema', () => {
+	it('accepts valid numeric folderId', () => {
+		const result = getLibraryFolderCallsRequestSchema.safeParse({
+			folderId: '3843152912968920037',
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects missing folderId', () => {
+		const result = getLibraryFolderCallsRequestSchema.safeParse({});
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects non-numeric folderId', () => {
+		const result = getLibraryFolderCallsRequestSchema.safeParse({
+			folderId: 'best-calls',
 		});
 		expect(result.success).toBe(false);
 	});

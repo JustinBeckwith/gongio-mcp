@@ -638,3 +638,196 @@ export function parseTranscriptsResponse(data: unknown): TranscriptsResponse {
 export function parseUsersResponse(data: unknown): UsersResponse {
 	return usersResponseSchema.parse(data);
 }
+
+// ============================================================================
+// New Tool Schemas
+// ============================================================================
+
+// --- get_call ---
+
+export const getCallRequestSchema = z.object({
+	callId: gongIdSchema,
+});
+
+export type GetCallRequest = z.infer<typeof getCallRequestSchema>;
+
+export const singleCallResponseSchema = z.object({
+	requestId: z.string().optional(),
+	call: callMetadataSchema,
+});
+
+export type SingleCallResponse = z.infer<typeof singleCallResponseSchema>;
+
+export function parseSingleCallResponse(data: unknown): SingleCallResponse {
+	return singleCallResponseSchema.parse(data);
+}
+
+// --- get_user ---
+
+export const getUserRequestSchema = z.object({
+	userId: gongIdSchema,
+});
+
+export type GetUserRequest = z.infer<typeof getUserRequestSchema>;
+
+export const singleUserResponseSchema = z.object({
+	requestId: z.string().optional(),
+	user: userSchema,
+});
+
+export type SingleUserResponse = z.infer<typeof singleUserResponseSchema>;
+
+export function parseSingleUserResponse(data: unknown): SingleUserResponse {
+	return singleUserResponseSchema.parse(data);
+}
+
+// --- search_users ---
+
+export const searchUsersRequestSchema = z.object({
+	userIds: z.array(gongIdSchema).optional(),
+	createdFromDateTime: iso8601DateTimeSchema.optional(),
+	createdToDateTime: iso8601DateTimeSchema.optional(),
+	cursor: cursorSchema.optional(),
+});
+
+export type SearchUsersRequest = z.infer<typeof searchUsersRequestSchema>;
+
+// (Reuse parseUsersResponse for search_users response)
+
+// --- get_trackers ---
+
+export const getTrackersRequestSchema = z.object({
+	workspaceId: gongIdSchema.optional(),
+});
+
+export type GetTrackersRequest = z.infer<typeof getTrackersRequestSchema>;
+
+const trackerKeywordGroupSchema = z.object({
+	language: z.string().nullish(),
+	keywords: z.array(z.string()).nullish(),
+	includeRelatedForms: z.boolean().nullish(),
+});
+
+const keywordTrackerDefinitionSchema = z.object({
+	trackerId: z.string().nullish(),
+	trackerName: z.string().nullish(),
+	workspaceId: z.string().nullish(),
+	languageKeywords: z.array(trackerKeywordGroupSchema).nullish(),
+	affiliation: z.string().nullish(),
+	partOfQuestion: z.boolean().nullish(),
+	saidAt: z.string().nullish(),
+	filterQuery: z.string().nullish(),
+	created: z.string().nullish(),
+	creatorUserId: z.string().nullish(),
+});
+
+export const trackersSettingsResponseSchema = z.object({
+	requestId: z.string().optional(),
+	keywordTrackers: z.array(keywordTrackerDefinitionSchema).nullish(),
+});
+
+export type TrackersSettingsResponse = z.infer<
+	typeof trackersSettingsResponseSchema
+>;
+
+export function parseTrackersSettingsResponse(
+	data: unknown,
+): TrackersSettingsResponse {
+	return trackersSettingsResponseSchema.parse(data);
+}
+
+// --- list_workspaces ---
+
+const workspaceSchema = z.object({
+	id: z.string(),
+	name: z.string().nullish(),
+	description: z.string().nullish(),
+});
+
+export const workspacesResponseSchema = z.object({
+	requestId: z.string().optional(),
+	workspaces: z.array(workspaceSchema).nullish(),
+});
+
+export type WorkspacesResponse = z.infer<typeof workspacesResponseSchema>;
+
+export function parseWorkspacesResponse(data: unknown): WorkspacesResponse {
+	return workspacesResponseSchema.parse(data);
+}
+
+// --- list_library_folders ---
+
+export const listLibraryFoldersRequestSchema = z.object({
+	workspaceId: gongIdSchema,
+});
+
+export type ListLibraryFoldersRequest = z.infer<
+	typeof listLibraryFoldersRequestSchema
+>;
+
+const libraryFolderSchema = z.object({
+	id: z.string(),
+	name: z.string().nullish(),
+	parentFolderId: z.string().nullish(),
+	createdBy: z.string().nullish(),
+	updated: z.string().nullish(),
+});
+
+export const libraryFoldersResponseSchema = z.object({
+	requestId: z.string().optional(),
+	folders: z.array(libraryFolderSchema).nullish(),
+});
+
+export type LibraryFoldersResponse = z.infer<
+	typeof libraryFoldersResponseSchema
+>;
+
+export function parseLibraryFoldersResponse(
+	data: unknown,
+): LibraryFoldersResponse {
+	return libraryFoldersResponseSchema.parse(data);
+}
+
+// --- get_library_folder_calls ---
+
+export const getLibraryFolderCallsRequestSchema = z.object({
+	folderId: gongIdSchema,
+});
+
+export type GetLibraryFolderCallsRequest = z.infer<
+	typeof getLibraryFolderCallsRequestSchema
+>;
+
+const snippetSchema = z.object({
+	fromSec: z.number().nullish(),
+	toSec: z.number().nullish(),
+});
+
+const libraryCallSchema = z.object({
+	id: z.string(),
+	title: z.string().nullish(),
+	note: z.string().nullish(),
+	addedBy: z.string().nullish(),
+	created: z.string().nullish(),
+	url: z.string().nullish(),
+	snippet: snippetSchema.nullish(),
+});
+
+export const libraryFolderCallsResponseSchema = z.object({
+	requestId: z.string().optional(),
+	id: z.string().nullish(),
+	name: z.string().nullish(),
+	createdBy: z.string().nullish(),
+	updated: z.string().nullish(),
+	calls: z.array(libraryCallSchema).nullish(),
+});
+
+export type LibraryFolderCallsResponse = z.infer<
+	typeof libraryFolderCallsResponseSchema
+>;
+
+export function parseLibraryFolderCallsResponse(
+	data: unknown,
+): LibraryFolderCallsResponse {
+	return libraryFolderCallsResponseSchema.parse(data);
+}

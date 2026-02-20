@@ -8,7 +8,13 @@ import type {
 	CallDetailsResponse,
 	CallsResponse,
 	CallTranscript,
+	LibraryFolderCallsResponse,
+	LibraryFoldersResponse,
+	SingleCallResponse,
+	SingleUserResponse,
+	TrackersSettingsResponse,
 	UsersResponse,
+	WorkspacesResponse,
 } from './schemas.js';
 
 // Party type for speaker name resolution
@@ -311,4 +317,209 @@ export function formatUsersResponse(response: UsersResponse): string {
  */
 function escapeMarkdown(text: string): string {
 	return text.replace(/\|/g, '\\|').replace(/\n/g, ' ').replace(/\r/g, '');
+}
+
+/**
+ * Format a single call's metadata (GET /v2/calls/{id})
+ */
+export function formatSingleCall(response: SingleCallResponse): string {
+	const lines: string[] = [];
+	const call = response.call;
+
+	lines.push(`## ${escapeMarkdown(call.title ?? 'Untitled Call')}\n`);
+
+	const metaParts: string[] = [`**ID:** ${call.id}`];
+	if (call.started) {
+		metaParts.push(`**Date:** ${new Date(call.started).toLocaleString()}`);
+	}
+	if (call.duration) {
+		metaParts.push(`**Duration:** ${Math.round(call.duration / 60)}m`);
+	}
+	if (call.direction) metaParts.push(`**Direction:** ${call.direction}`);
+	if (call.scope) metaParts.push(`**Scope:** ${call.scope}`);
+	if (call.system) metaParts.push(`**System:** ${call.system}`);
+	if (call.media) metaParts.push(`**Media:** ${call.media}`);
+	if (call.language) metaParts.push(`**Language:** ${call.language}`);
+	lines.push(metaParts.join(' | '));
+
+	if (call.url) lines.push(`**URL:** ${call.url}`);
+	if (call.purpose) lines.push(`**Purpose:** ${escapeMarkdown(call.purpose)}`);
+	if (call.primaryUserId) lines.push(`**Host User ID:** ${call.primaryUserId}`);
+	if (call.workspaceId) lines.push(`**Workspace ID:** ${call.workspaceId}`);
+	if (call.isPrivate !== null && call.isPrivate !== undefined) {
+		lines.push(`**Private:** ${call.isPrivate ? 'Yes' : 'No'}`);
+	}
+
+	return lines.join('\n');
+}
+
+/**
+ * Format a single user's profile (GET /v2/users/{id})
+ */
+export function formatSingleUser(response: SingleUserResponse): string {
+	const lines: string[] = [];
+	const user = response.user;
+
+	const name =
+		[user.firstName, user.lastName].filter(Boolean).join(' ') || 'Unknown';
+	lines.push(`## ${escapeMarkdown(name)}\n`);
+
+	const metaParts: string[] = [`**ID:** ${user.id}`];
+	if (user.emailAddress) metaParts.push(`**Email:** ${user.emailAddress}`);
+	if (user.title) metaParts.push(`**Title:** ${escapeMarkdown(user.title)}`);
+	if (user.active !== null && user.active !== undefined) {
+		metaParts.push(`**Active:** ${user.active ? 'Yes' : 'No'}`);
+	}
+	lines.push(metaParts.join(' | '));
+
+	if (user.phoneNumber) lines.push(`**Phone:** ${user.phoneNumber}`);
+	if (user.managerId) lines.push(`**Manager ID:** ${user.managerId}`);
+	if (user.spokenLanguages?.length) {
+		const langs = user.spokenLanguages
+			.map((l) => (l.primary ? `${l.language} (primary)` : l.language))
+			.join(', ');
+		lines.push(`**Languages:** ${langs}`);
+	}
+
+	return lines.join('\n');
+}
+
+/**
+ * Format keyword trackers response
+ */
+export function formatTrackersResponse(
+	response: TrackersSettingsResponse,
+): string {
+	const lines: string[] = [];
+	const trackers = response.keywordTrackers ?? [];
+
+	lines.push(`**Keyword Trackers** (${trackers.length} total)\n`);
+
+	if (trackers.length === 0) {
+		lines.push('No trackers found.');
+		return lines.join('\n');
+	}
+
+	lines.push('| Name | Affiliation | Tracks | Keywords |');
+	lines.push('|------|-------------|--------|----------|');
+
+	for (const tracker of trackers) {
+		const name = escapeMarkdown(tracker.trackerName?.slice(0, 40) ?? '-');
+		const affiliation = tracker.affiliation ?? '-';
+		const tracks = tracker.saidAt ?? '-';
+
+		const allKeywords = (tracker.languageKeywords ?? [])
+			.flatMap((lk) => lk.keywords ?? [])
+			.slice(0, 5)
+			.map((k) => escapeMarkdown(k))
+			.join(', ');
+		const keywordsDisplay = allKeywords || '-';
+
+		lines.push(`| ${name} | ${affiliation} | ${tracks} | ${keywordsDisplay} |`);
+	}
+
+	return lines.join('\n');
+}
+
+/**
+ * Format workspaces list response
+ */
+export function formatWorkspacesResponse(response: WorkspacesResponse): string {
+	const lines: string[] = [];
+	const workspaces = response.workspaces ?? [];
+
+	lines.push(`**Workspaces** (${workspaces.length} total)\n`);
+
+	if (workspaces.length === 0) {
+		lines.push('No workspaces found.');
+		return lines.join('\n');
+	}
+
+	lines.push('| ID | Name | Description |');
+	lines.push('|----|------|-------------|');
+
+	for (const ws of workspaces) {
+		const name = escapeMarkdown(ws.name?.slice(0, 40) ?? '-');
+		const desc = escapeMarkdown(ws.description?.slice(0, 60) ?? '-');
+		lines.push(`| ${ws.id} | ${name} | ${desc} |`);
+	}
+
+	return lines.join('\n');
+}
+
+/**
+ * Format library folders list response
+ */
+export function formatLibraryFoldersResponse(
+	response: LibraryFoldersResponse,
+): string {
+	const lines: string[] = [];
+	const folders = response.folders ?? [];
+
+	lines.push(`**Library Folders** (${folders.length} total)\n`);
+
+	if (folders.length === 0) {
+		lines.push('No library folders found.');
+		return lines.join('\n');
+	}
+
+	lines.push('| ID | Name | Parent Folder |');
+	lines.push('|----|------|---------------|');
+
+	for (const folder of folders) {
+		const name = escapeMarkdown(folder.name?.slice(0, 50) ?? '-');
+		const parent = folder.parentFolderId ?? 'Root';
+		lines.push(`| ${folder.id} | ${name} | ${parent} |`);
+	}
+
+	return lines.join('\n');
+}
+
+/**
+ * Format library folder calls response
+ */
+export function formatLibraryFolderCallsResponse(
+	response: LibraryFolderCallsResponse,
+): string {
+	const lines: string[] = [];
+	const calls = response.calls ?? [];
+
+	const folderName = escapeMarkdown(response.name ?? 'Unknown Folder');
+	lines.push(`## Library Folder: ${folderName}\n`);
+	if (response.id) lines.push(`**Folder ID:** ${response.id}`);
+	lines.push(`**Calls:** ${calls.length}\n`);
+
+	if (calls.length === 0) {
+		lines.push('No calls in this folder.');
+		return lines.join('\n');
+	}
+
+	lines.push('| Call ID | Title | Added By | Added On | Snippet | Note |');
+	lines.push('|---------|-------|----------|----------|---------|------|');
+
+	for (const call of calls) {
+		const title = escapeMarkdown(call.title?.slice(0, 50) ?? '-');
+		const addedBy = call.addedBy ?? '-';
+		const addedOn = call.created
+			? new Date(call.created).toLocaleDateString()
+			: '-';
+
+		let snippet = '-';
+		if (call.snippet?.fromSec != null && call.snippet?.toSec != null) {
+			const fmt = (s: number) =>
+				`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+			snippet = `${fmt(call.snippet.fromSec)}\u2013${fmt(call.snippet.toSec)}`;
+		}
+
+		const note = call.note
+			? escapeMarkdown(call.note.slice(0, 60)) +
+				(call.note.length > 60 ? '\u2026' : '')
+			: '-';
+
+		lines.push(
+			`| ${call.id} | ${title} | ${addedBy} | ${addedOn} | ${snippet} | ${note} |`,
+		);
+	}
+
+	return lines.join('\n');
 }
