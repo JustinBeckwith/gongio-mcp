@@ -13,15 +13,27 @@ import {
 	formatCallSummary,
 	formatCallsResponse,
 	formatCallTranscript,
+	formatLibraryFolderCallsResponse,
+	formatLibraryFoldersResponse,
+	formatSingleCall,
+	formatSingleUser,
+	formatTrackersResponse,
 	formatUsersResponse,
+	formatWorkspacesResponse,
 } from './formatters.js';
 import { GongClient } from './gong.js';
 import {
+	getCallRequestSchema,
 	getCallSummaryRequestSchema,
 	getCallTranscriptRequestSchema,
+	getLibraryFolderCallsRequestSchema,
+	getTrackersRequestSchema,
+	getUserRequestSchema,
 	listCallsRequestSchema,
+	listLibraryFoldersRequestSchema,
 	listUsersRequestSchema,
 	searchCallsRequestSchema,
+	searchUsersRequestSchema,
 } from './schemas.js';
 
 // Get credentials from environment
@@ -215,6 +227,133 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 					},
 				},
 			},
+			{
+				name: 'get_call',
+				description:
+					'Get metadata for a specific Gong call including URL, direction, scope, system, and duration. Faster than get_call_summary when you only need call metadata.',
+				inputSchema: {
+					type: 'object',
+					properties: {
+						callId: {
+							type: 'string',
+							pattern: '^\\d{1,20}$',
+							description: 'Gong call ID (numeric string up to 20 digits)',
+						},
+					},
+					required: ['callId'],
+				},
+			},
+			{
+				name: 'get_trackers',
+				description:
+					'List all keyword tracker definitions including tracked phrases, affiliation (who speaks them), and filter queries. Explains tracker hits visible in call summaries.',
+				inputSchema: {
+					type: 'object',
+					properties: {
+						workspaceId: {
+							type: 'string',
+							pattern: '^\\d{1,20}$',
+							description: 'Filter trackers by workspace ID',
+						},
+					},
+				},
+			},
+			{
+				name: 'get_user',
+				description:
+					'Get a specific user profile including name, email, title, phone, and settings. Use to resolve user IDs returned from call data.',
+				inputSchema: {
+					type: 'object',
+					properties: {
+						userId: {
+							type: 'string',
+							pattern: '^\\d{1,20}$',
+							description: 'Gong user ID (numeric string up to 20 digits)',
+						},
+					},
+					required: ['userId'],
+				},
+			},
+			{
+				name: 'search_users',
+				description:
+					'Search and filter users by IDs or creation date. More flexible than list_users for resolving specific user IDs from call data.',
+				inputSchema: {
+					type: 'object',
+					properties: {
+						userIds: {
+							type: 'array',
+							description: 'Specific user IDs to look up',
+							items: {
+								type: 'string',
+								pattern: '^\\d{1,20}$',
+							},
+						},
+						createdFromDateTime: {
+							type: 'string',
+							pattern:
+								'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$',
+							description:
+								'Filter users created after this datetime (ISO 8601)',
+						},
+						createdToDateTime: {
+							type: 'string',
+							pattern:
+								'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$',
+							description:
+								'Filter users created before this datetime (ISO 8601)',
+						},
+						cursor: {
+							type: 'string',
+							description: 'Pagination cursor for fetching next page',
+							minLength: 1,
+						},
+					},
+				},
+			},
+			{
+				name: 'list_workspaces',
+				description:
+					'List all Gong workspaces with their IDs and names. Use workspace IDs as filters in list_calls, search_calls, get_trackers, and other tools.',
+				inputSchema: {
+					type: 'object',
+					properties: {},
+				},
+			},
+			{
+				name: 'list_library_folders',
+				description:
+					'List all public Gong call library folders for a workspace. Returns folder IDs and names to use with get_library_folder_calls. Use list_workspaces to find workspace IDs.',
+				inputSchema: {
+					type: 'object',
+					properties: {
+						workspaceId: {
+							type: 'string',
+							pattern: '^\\d{1,20}$',
+							description:
+								'Workspace ID to list folders for (use list_workspaces to find IDs)',
+						},
+					},
+					required: ['workspaceId'],
+				},
+			},
+			{
+				name: 'get_library_folder_calls',
+				description:
+					'Get all calls saved in a specific Gong library folder. Returns call IDs, titles, curator notes, and snippet timing. Use list_library_folders to find folder IDs. Call IDs can be passed to get_call_summary or get_call_transcript.',
+				inputSchema: {
+					type: 'object',
+					properties: {
+						folderId: {
+							type: 'string',
+							pattern: '^\\d{1,20}$',
+							description:
+								'Library folder ID (numeric string, from list_library_folders)',
+						},
+					},
+					required: ['folderId'],
+				},
+			},
 		],
 	};
 });
@@ -306,6 +445,68 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 						{
 							type: 'text',
 							text: formatCallDetailsResponse(result),
+						},
+					],
+				};
+			}
+
+			case 'get_call': {
+				const validated = getCallRequestSchema.parse(args);
+				const result = await gong.getCall(validated.callId);
+				return {
+					content: [{ type: 'text', text: formatSingleCall(result) }],
+				};
+			}
+
+			case 'get_trackers': {
+				const validated = getTrackersRequestSchema.parse(args ?? {});
+				const result = await gong.getTrackers(validated);
+				return {
+					content: [{ type: 'text', text: formatTrackersResponse(result) }],
+				};
+			}
+
+			case 'get_user': {
+				const validated = getUserRequestSchema.parse(args);
+				const result = await gong.getUser(validated.userId);
+				return {
+					content: [{ type: 'text', text: formatSingleUser(result) }],
+				};
+			}
+
+			case 'search_users': {
+				const validated = searchUsersRequestSchema.parse(args ?? {});
+				const result = await gong.searchUsers(validated);
+				return {
+					content: [{ type: 'text', text: formatUsersResponse(result) }],
+				};
+			}
+
+			case 'list_workspaces': {
+				const result = await gong.listWorkspaces();
+				return {
+					content: [{ type: 'text', text: formatWorkspacesResponse(result) }],
+				};
+			}
+
+			case 'list_library_folders': {
+				const validated = listLibraryFoldersRequestSchema.parse(args);
+				const result = await gong.listLibraryFolders(validated);
+				return {
+					content: [
+						{ type: 'text', text: formatLibraryFoldersResponse(result) },
+					],
+				};
+			}
+
+			case 'get_library_folder_calls': {
+				const validated = getLibraryFolderCallsRequestSchema.parse(args);
+				const result = await gong.getLibraryFolderCalls(validated);
+				return {
+					content: [
+						{
+							type: 'text',
+							text: formatLibraryFolderCallsResponse(result),
 						},
 					],
 				};

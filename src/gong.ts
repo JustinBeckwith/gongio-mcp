@@ -6,14 +6,30 @@
 import {
 	type CallDetailsResponse,
 	type CallsResponse,
+	type GetLibraryFolderCallsRequest,
+	type GetTrackersRequest,
+	type LibraryFolderCallsResponse,
+	type LibraryFoldersResponse,
 	type ListCallsRequest,
+	type ListLibraryFoldersRequest,
 	type ListUsersRequest,
 	parseCallDetailsResponse,
 	parseCallsResponse,
+	parseLibraryFolderCallsResponse,
+	parseLibraryFoldersResponse,
+	parseSingleCallResponse,
+	parseSingleUserResponse,
+	parseTrackersSettingsResponse,
 	parseTranscriptsResponse,
 	parseUsersResponse,
+	parseWorkspacesResponse,
+	type SearchUsersRequest,
+	type SingleCallResponse,
+	type SingleUserResponse,
+	type TrackersSettingsResponse,
 	type TranscriptsResponse,
 	type UsersResponse,
+	type WorkspacesResponse,
 } from './schemas.js';
 
 const GONG_API_BASE = 'https://api.gong.io/v2';
@@ -30,10 +46,16 @@ export type {
 	CallDetailsResponse,
 	CallsResponse,
 	CallTranscript,
+	LibraryFolderCallsResponse,
+	LibraryFoldersResponse,
+	SingleCallResponse,
+	SingleUserResponse,
+	TrackersSettingsResponse,
 	TranscriptEntry,
 	TranscriptsResponse,
 	User,
 	UsersResponse,
+	WorkspacesResponse,
 } from './schemas.js';
 
 export class GongClient {
@@ -234,5 +256,94 @@ export class GongClient {
 
 		const response = await this.get('/users', params);
 		return parseUsersResponse(response);
+	}
+
+	/**
+	 * Get a single call's metadata (GET /v2/calls/{id})
+	 */
+	async getCall(callId: string): Promise<SingleCallResponse> {
+		const response = await this.get(`/calls/${callId}`);
+		return parseSingleCallResponse(response);
+	}
+
+	/**
+	 * Get a specific user's profile (GET /v2/users/{id})
+	 */
+	async getUser(userId: string): Promise<SingleUserResponse> {
+		const response = await this.get(`/users/${userId}`);
+		return parseSingleUserResponse(response);
+	}
+
+	/**
+	 * Search users with filters (POST /v2/users/extensive)
+	 */
+	async searchUsers(options: SearchUsersRequest): Promise<UsersResponse> {
+		const filter: Record<string, unknown> = {};
+
+		if (options.userIds && options.userIds.length > 0) {
+			filter.userIds = options.userIds;
+		}
+		if (options.createdFromDateTime) {
+			filter.createdFromDateTime = options.createdFromDateTime;
+		}
+		if (options.createdToDateTime) {
+			filter.createdToDateTime = options.createdToDateTime;
+		}
+
+		const body: Record<string, unknown> = { filter };
+		if (options.cursor) {
+			body.cursor = options.cursor;
+		}
+
+		const response = await this.request('POST', '/users/extensive', body);
+		return parseUsersResponse(response);
+	}
+
+	/**
+	 * List keyword trackers (GET /v2/settings/trackers)
+	 */
+	async getTrackers(
+		options?: GetTrackersRequest,
+	): Promise<TrackersSettingsResponse> {
+		const params: Record<string, string> = {};
+		if (options?.workspaceId) {
+			params.workspaceId = options.workspaceId;
+		}
+		const response = await this.get('/settings/trackers', params);
+		return parseTrackersSettingsResponse(response);
+	}
+
+	/**
+	 * List all workspaces (GET /v2/workspaces)
+	 */
+	async listWorkspaces(): Promise<WorkspacesResponse> {
+		const response = await this.get('/workspaces');
+		return parseWorkspacesResponse(response);
+	}
+
+	/**
+	 * List public library folders (GET /v2/library/folders)
+	 */
+	async listLibraryFolders(
+		options?: ListLibraryFoldersRequest,
+	): Promise<LibraryFoldersResponse> {
+		const params: Record<string, string> = {};
+		if (options?.workspaceId) {
+			params.workspaceId = options.workspaceId;
+		}
+		const response = await this.get('/library/folders', params);
+		return parseLibraryFoldersResponse(response);
+	}
+
+	/**
+	 * Get calls in a specific library folder (GET /v2/library/folder-content)
+	 */
+	async getLibraryFolderCalls(
+		options: GetLibraryFolderCallsRequest,
+	): Promise<LibraryFolderCallsResponse> {
+		const response = await this.get('/library/folder-content', {
+			folderId: options.folderId,
+		});
+		return parseLibraryFolderCallsResponse(response);
 	}
 }
