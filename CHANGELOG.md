@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/JustinBeckwith/gongio-mcp/compare/gongio-mcp-v1.4.1...gongio-mcp-v1.5.0) (2026-02-27)
+
+
+### Features
+
+* Added 7 new MCP tools, Docker support, and README restructure ([#31](https://github.com/JustinBeckwith/gongio-mcp/issues/31)) ([f6842ac](https://github.com/JustinBeckwith/gongio-mcp/commit/f6842ac9d6990403db27f05442c9ef831a2a3bff))
+
 ## [1.4.1](https://github.com/JustinBeckwith/gongio-mcp/compare/gongio-mcp-v1.4.0...gongio-mcp-v1.4.1) (2026-01-26)
 
 

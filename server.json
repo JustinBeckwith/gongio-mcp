@@ -6,12 +6,12 @@
 		"url": "https://github.com/JustinBeckwith/gongio-mcp",
 		"source": "github"
 	},
-	"version": "1.4.1",
+	"version": "1.5.0",
 	"packages": [
 		{
 			"registryType": "npm",
 			"identifier": "gongio-mcp",
-			"version": "1.4.1",
+			"version": "1.5.0",
 			"transport": {
 				"type": "stdio"
 			}
