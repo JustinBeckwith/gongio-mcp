@@ -92,6 +92,83 @@ export function buildContentSelector(
 
 export const MAX_SEARCH_PAGES = 50;
 
+/**
+ * Filter calls to those where any participant has a matching userId.
+ */
+export function filterByParticipantUserIds(
+	calls: CallDetails[],
+	userIds: string[],
+): CallDetails[] {
+	const idSet = new Set(userIds);
+	return calls.filter((call) =>
+		call.parties?.some((p) => p.userId && idSet.has(p.userId)),
+	);
+}
+
+/**
+ * Filter calls to those where any participant has a matching email address.
+ * Comparison is case-insensitive.
+ */
+export function filterByParticipantEmails(
+	calls: CallDetails[],
+	emails: string[],
+): CallDetails[] {
+	const emailSet = new Set(emails.map((e) => e.toLowerCase()));
+	return calls.filter((call) =>
+		call.parties?.some(
+			(p) => p.emailAddress && emailSet.has(p.emailAddress.toLowerCase()),
+		),
+	);
+}
+
+/**
+ * Filter calls by customer/account name.
+ * Case-insensitive substring match against:
+ * 1. CRM context Account Name fields
+ * 2. External participant email domains
+ * 3. Call title
+ */
+export function filterByCustomerName(
+	calls: CallDetails[],
+	name: string,
+): CallDetails[] {
+	const needle = name.toLowerCase();
+	return calls.filter((call) => {
+		// Check CRM context for Account Name
+		for (const ctx of call.context ?? []) {
+			for (const obj of ctx.objects ?? []) {
+				if (obj.objectType === 'Account') {
+					for (const field of obj.fields ?? []) {
+						if (
+							field.name.toLowerCase() === 'name' &&
+							field.value.toLowerCase().includes(needle)
+						) {
+							return true;
+						}
+					}
+				}
+			}
+		}
+
+		// Check external participant email domains
+		for (const party of call.parties ?? []) {
+			if (party.emailAddress && party.affiliation !== 'Internal') {
+				const domain = party.emailAddress.split('@')[1];
+				if (domain?.toLowerCase().includes(needle)) {
+					return true;
+				}
+			}
+		}
+
+		// Check call title
+		if (call.metaData.title?.toLowerCase().includes(needle)) {
+			return true;
+		}
+
+		return false;
+	});
+}
+
 export interface GongConfig {
 	accessKey: string;
 	accessKeySecret: string;
@@ -310,14 +387,27 @@ export class GongClient {
 		primaryUserIds?: string[];
 		callIds?: string[];
 		include?: string[];
+		participantUserIds?: string[];
+		participantEmails?: string[];
+		customerName?: string;
 	}): Promise<{ response: CallDetailsResponse; totalBeforeFilter: number }> {
 		const allCalls: CallDetails[] = [];
 		let cursor: string | undefined;
 		let pageCount = 0;
 		let requestId = '';
 
+		// Only pass server-side filter options to the API
+		const apiOptions = {
+			fromDateTime: options.fromDateTime,
+			toDateTime: options.toDateTime,
+			workspaceId: options.workspaceId,
+			primaryUserIds: options.primaryUserIds,
+			callIds: options.callIds,
+			include: options.include,
+		};
+
 		do {
-			const page = await this.searchCalls({ ...options, cursor });
+			const page = await this.searchCalls({ ...apiOptions, cursor });
 			allCalls.push(...page.calls);
 			cursor = page.records.cursor;
 			requestId = page.requestId;
@@ -330,17 +420,37 @@ export class GongClient {
 			);
 		}
 
+		const totalBeforeFilter = allCalls.length;
+
+		// Apply client-side filters
+		let filtered = allCalls;
+		if (options.participantUserIds && options.participantUserIds.length > 0) {
+			filtered = filterByParticipantUserIds(
+				filtered,
+				options.participantUserIds,
+			);
+		}
+		if (options.participantEmails && options.participantEmails.length > 0) {
+			filtered = filterByParticipantEmails(
+				filtered,
+				options.participantEmails,
+			);
+		}
+		if (options.customerName) {
+			filtered = filterByCustomerName(filtered, options.customerName);
+		}
+
 		return {
 			response: {
 				requestId,
 				records: {
-					totalRecords: allCalls.length,
-					currentPageSize: allCalls.length,
+					totalRecords: filtered.length,
+					currentPageSize: filtered.length,
 					currentPageNumber: 0,
 				},
-				calls: allCalls,
+				calls: filtered,
 			},
-			totalBeforeFilter: allCalls.length,
+			totalBeforeFilter,
 		};
 	}
 

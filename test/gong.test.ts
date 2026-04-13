@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GongClient, buildContentSelector } from '../src/gong.js';
+import {
+	GongClient,
+	buildContentSelector,
+	filterByCustomerName,
+	filterByParticipantEmails,
+	filterByParticipantUserIds,
+} from '../src/gong.js';
 import type {
+	CallDetails,
 	CallDetailsResponse,
 	LibraryFolderCallsResponse,
 	LibraryFoldersResponse,
@@ -900,5 +907,179 @@ describe('buildContentSelector', () => {
 		expect(exposed.interaction).toEqual({ speakers: true });
 		expect(selector.context).toBe('Extended');
 		expect(exposed.media).toBe(true);
+	});
+});
+
+describe('filterByParticipantUserIds', () => {
+	const calls: CallDetails[] = [
+		{
+			metaData: { id: '1', title: 'Call 1' },
+			parties: [
+				{ userId: '100', name: 'Alice' },
+				{ userId: '200', name: 'Bob' },
+			],
+		},
+		{
+			metaData: { id: '2', title: 'Call 2' },
+			parties: [{ userId: '300', name: 'Charlie' }],
+		},
+		{
+			metaData: { id: '3', title: 'Call 3' },
+			parties: [],
+		},
+	];
+
+	it('returns calls where a party has a matching userId', () => {
+		const result = filterByParticipantUserIds(calls, ['200']);
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('1');
+	});
+
+	it('matches multiple user IDs', () => {
+		const result = filterByParticipantUserIds(calls, ['100', '300']);
+		expect(result).toHaveLength(2);
+	});
+
+	it('returns empty when no match', () => {
+		const result = filterByParticipantUserIds(calls, ['999']);
+		expect(result).toHaveLength(0);
+	});
+
+	it('handles calls with null parties', () => {
+		const callsWithNull: CallDetails[] = [
+			{ metaData: { id: '1', title: 'No parties' }, parties: null },
+		];
+		const result = filterByParticipantUserIds(callsWithNull, ['100']);
+		expect(result).toHaveLength(0);
+	});
+});
+
+describe('filterByParticipantEmails', () => {
+	const calls: CallDetails[] = [
+		{
+			metaData: { id: '1', title: 'Call 1' },
+			parties: [
+				{ emailAddress: 'alice@example.com', name: 'Alice' },
+				{ emailAddress: 'bob@example.com', name: 'Bob' },
+			],
+		},
+		{
+			metaData: { id: '2', title: 'Call 2' },
+			parties: [{ name: 'No Email' }],
+		},
+	];
+
+	it('matches email case-insensitively', () => {
+		const result = filterByParticipantEmails(calls, ['ALICE@EXAMPLE.COM']);
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('1');
+	});
+
+	it('returns empty when no match', () => {
+		const result = filterByParticipantEmails(calls, ['nobody@example.com']);
+		expect(result).toHaveLength(0);
+	});
+
+	it('handles parties with null emailAddress', () => {
+		const result = filterByParticipantEmails(calls, ['noemail@test.com']);
+		expect(result).toHaveLength(0);
+	});
+});
+
+describe('filterByCustomerName', () => {
+	const calls: CallDetails[] = [
+		{
+			metaData: { id: '1', title: 'Vendor // Acme Corp Sync' },
+			context: [
+				{
+					system: 'HubSpot',
+					objects: [
+						{
+							objectType: 'Account',
+							objectId: '123',
+							fields: [{ name: 'Name', value: 'Acme Corporation' }],
+						},
+					],
+				},
+			],
+			parties: [
+				{
+					emailAddress: 'john@acme.com',
+					affiliation: 'External',
+					name: 'John',
+				},
+			],
+		},
+		{
+			metaData: { id: '2', title: 'Internal Standup' },
+			parties: [
+				{
+					emailAddress: 'alice@example.com',
+					affiliation: 'Internal',
+					name: 'Alice',
+				},
+			],
+		},
+		{
+			metaData: { id: '3', title: 'Globex Meeting' },
+			parties: [
+				{
+					emailAddress: 'hank@globex.com',
+					affiliation: 'External',
+					name: 'Hank',
+				},
+			],
+		},
+	];
+
+	it('matches CRM Account Name', () => {
+		const result = filterByCustomerName(calls, 'Acme');
+		expect(result.some((c) => c.metaData.id === '1')).toBe(true);
+	});
+
+	it('matches external participant email domain', () => {
+		const result = filterByCustomerName(calls, 'globex');
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('3');
+	});
+
+	it('matches call title', () => {
+		const result = filterByCustomerName(calls, 'Acme Corp');
+		expect(result.some((c) => c.metaData.id === '1')).toBe(true);
+	});
+
+	it('is case-insensitive', () => {
+		const result = filterByCustomerName(calls, 'acme');
+		expect(result.some((c) => c.metaData.id === '1')).toBe(true);
+	});
+
+	it('does not match internal email domains', () => {
+		const internalCalls: CallDetails[] = [
+			{
+				metaData: { id: '1', title: 'Team Standup' },
+				parties: [
+					{
+						emailAddress: 'alice@internal.com',
+						affiliation: 'Internal',
+						name: 'Alice',
+					},
+				],
+			},
+		];
+		const result = filterByCustomerName(internalCalls, 'internal');
+		expect(result).toHaveLength(0);
+	});
+
+	it('returns empty when no match', () => {
+		const result = filterByCustomerName(calls, 'Nonexistent');
+		expect(result).toHaveLength(0);
+	});
+
+	it('handles calls with null context and parties', () => {
+		const sparse: CallDetails[] = [
+			{ metaData: { id: '1', title: null } },
+		];
+		const result = filterByCustomerName(sparse, 'anything');
+		expect(result).toHaveLength(0);
 	});
 });
