@@ -40,6 +40,55 @@ import {
 
 const GONG_API_BASE = 'https://api.gong.io/v2';
 
+/**
+ * Build a contentSelector object for the Gong API calls/extensive endpoint.
+ * Always includes parties, brief, and topics as defaults.
+ * The include array adds additional content fields.
+ */
+export function buildContentSelector(
+	include?: string[],
+): Record<string, unknown> {
+	const content: Record<string, boolean> = { brief: true, topics: true };
+	const exposedFields: Record<string, unknown> = { parties: true, content };
+	const selector: Record<string, unknown> = { exposedFields };
+
+	if (!include) return selector;
+
+	for (const item of include) {
+		switch (item) {
+			case 'keyPoints':
+				content.keyPoints = true;
+				break;
+			case 'trackers':
+				content.trackers = true;
+				break;
+			case 'highlights':
+				content.highlights = true;
+				break;
+			case 'outline':
+				content.outline = true;
+				break;
+			case 'speakers': {
+				const interaction =
+					(exposedFields.interaction as Record<string, boolean>) ?? {};
+				interaction.speakers = true;
+				exposedFields.interaction = interaction;
+				break;
+			}
+			case 'comments':
+				exposedFields.collaboration = { publicComments: true };
+				break;
+			case 'context':
+				selector.context = 'Extended';
+				break;
+			case 'media':
+				exposedFields.media = true;
+				break;
+		}
+	}
+	return selector;
+}
+
 export interface GongConfig {
 	accessKey: string;
 	accessKeySecret: string;
@@ -202,8 +251,9 @@ export class GongClient {
 
 	/**
 	 * Search calls with advanced filters (POST /v2/calls/extensive)
-	 * Supports filtering by date range, workspace, primary users (hosts), and specific call IDs
-	 * Returns minimal call metadata (same format as listCalls)
+	 * Supports filtering by date range, workspace, primary users (hosts), and specific call IDs.
+	 * Always includes parties, brief, and topics in the response.
+	 * Use the include parameter to request additional content fields.
 	 */
 	async searchCalls(options: {
 		fromDateTime?: string;
@@ -211,6 +261,7 @@ export class GongClient {
 		workspaceId?: string;
 		primaryUserIds?: string[];
 		callIds?: string[];
+		include?: string[];
 		cursor?: string;
 	}): Promise<CallDetailsResponse> {
 		// Build filter object
@@ -232,11 +283,9 @@ export class GongClient {
 			filter.callIds = options.callIds;
 		}
 
-		// Build request body according to Gong API docs
 		const body: Record<string, unknown> = {
 			filter,
-			// Omit contentSelector to get minimal fields (just metadata)
-			// The API returns only metaData by default when contentSelector is not specified
+			contentSelector: buildContentSelector(options.include),
 		};
 
 		if (options.cursor) {

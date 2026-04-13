@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GongClient } from '../src/gong.js';
+import { GongClient, buildContentSelector } from '../src/gong.js';
 import type {
 	CallDetailsResponse,
 	LibraryFolderCallsResponse,
@@ -287,7 +287,7 @@ describe('GongClient', () => {
 			expect(result.calls[0].metaData.title).toBe('Important Call');
 		});
 
-		it('omits contentSelector for minimal response', async () => {
+		it('includes default contentSelector with parties, brief, and topics', async () => {
 			const mockResponse: CallDetailsResponse = {
 				requestId: 'test-123',
 				records: {
@@ -306,8 +306,43 @@ describe('GongClient', () => {
 			await client.searchCalls({});
 
 			const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-			expect(callBody.contentSelector).toBeUndefined();
+			expect(callBody.contentSelector).toBeDefined();
+			expect(callBody.contentSelector.exposedFields.parties).toBe(true);
+			expect(callBody.contentSelector.exposedFields.content.brief).toBe(
+				true,
+			);
+			expect(callBody.contentSelector.exposedFields.content.topics).toBe(
+				true,
+			);
 			expect(callBody.filter).toBeDefined();
+		});
+
+		it('adds include fields to contentSelector', async () => {
+			const mockResponse: CallDetailsResponse = {
+				requestId: 'test-123',
+				records: {
+					totalRecords: 0,
+					currentPageSize: 0,
+					currentPageNumber: 1,
+				},
+				calls: [],
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			await client.searchCalls({
+				include: ['keyPoints', 'trackers', 'speakers', 'context'],
+			});
+
+			const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+			const cs = callBody.contentSelector;
+			expect(cs.exposedFields.content.keyPoints).toBe(true);
+			expect(cs.exposedFields.content.trackers).toBe(true);
+			expect(cs.exposedFields.interaction.speakers).toBe(true);
+			expect(cs.context).toBe('Extended');
 		});
 	});
 
@@ -640,5 +675,91 @@ describe('GongClient', () => {
 			expect(result.calls).toHaveLength(1);
 			expect(result.calls?.[0]?.id).toBe('111222333');
 		});
+	});
+});
+
+describe('buildContentSelector', () => {
+	it('returns default fields when no include is provided', () => {
+		const selector = buildContentSelector();
+		expect(selector.exposedFields).toEqual({
+			parties: true,
+			content: { brief: true, topics: true },
+		});
+	});
+
+	it('returns default fields when include is undefined', () => {
+		const selector = buildContentSelector(undefined);
+		expect(selector.exposedFields).toEqual({
+			parties: true,
+			content: { brief: true, topics: true },
+		});
+	});
+
+	it('adds keyPoints to content fields', () => {
+		const selector = buildContentSelector(['keyPoints']);
+		const content = (selector.exposedFields as Record<string, unknown>)
+			.content as Record<string, boolean>;
+		expect(content.keyPoints).toBe(true);
+		expect(content.brief).toBe(true);
+		expect(content.topics).toBe(true);
+	});
+
+	it('adds trackers to content fields', () => {
+		const selector = buildContentSelector(['trackers']);
+		const content = (selector.exposedFields as Record<string, unknown>)
+			.content as Record<string, boolean>;
+		expect(content.trackers).toBe(true);
+	});
+
+	it('adds highlights to content fields', () => {
+		const selector = buildContentSelector(['highlights']);
+		const content = (selector.exposedFields as Record<string, unknown>)
+			.content as Record<string, boolean>;
+		expect(content.highlights).toBe(true);
+	});
+
+	it('adds outline to content fields', () => {
+		const selector = buildContentSelector(['outline']);
+		const content = (selector.exposedFields as Record<string, unknown>)
+			.content as Record<string, boolean>;
+		expect(content.outline).toBe(true);
+	});
+
+	it('adds speakers to interaction fields', () => {
+		const selector = buildContentSelector(['speakers']);
+		const exposed = selector.exposedFields as Record<string, unknown>;
+		expect(exposed.interaction).toEqual({ speakers: true });
+	});
+
+	it('adds publicComments to collaboration fields', () => {
+		const selector = buildContentSelector(['comments']);
+		const exposed = selector.exposedFields as Record<string, unknown>;
+		expect(exposed.collaboration).toEqual({ publicComments: true });
+	});
+
+	it('sets context to Extended', () => {
+		const selector = buildContentSelector(['context']);
+		expect(selector.context).toBe('Extended');
+	});
+
+	it('sets media to true', () => {
+		const selector = buildContentSelector(['media']);
+		const exposed = selector.exposedFields as Record<string, unknown>;
+		expect(exposed.media).toBe(true);
+	});
+
+	it('handles multiple include values', () => {
+		const selector = buildContentSelector([
+			'keyPoints',
+			'speakers',
+			'context',
+			'media',
+		]);
+		const exposed = selector.exposedFields as Record<string, unknown>;
+		const content = exposed.content as Record<string, boolean>;
+		expect(content.keyPoints).toBe(true);
+		expect(exposed.interaction).toEqual({ speakers: true });
+		expect(selector.context).toBe('Extended');
+		expect(exposed.media).toBe(true);
 	});
 });
