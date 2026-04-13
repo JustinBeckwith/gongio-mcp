@@ -64,40 +64,209 @@ export function formatCallsResponse(response: CallsResponse): string {
 }
 
 /**
- * Format call details response as markdown table (same format as formatCallsResponse)
- * Used for search_calls which returns CallDetailsResponse from /v2/calls/extensive
+ * Check if any call in the response has rich content beyond metadata.
+ */
+function hasRichContent(calls: CallDetails[]): boolean {
+	return calls.some(
+		(c) =>
+			(c.parties && c.parties.length > 0) ||
+			c.content?.brief ||
+			(c.content?.topics && c.content.topics.length > 0),
+	);
+}
+
+/**
+ * Extract CRM account name from call context, if available.
+ */
+function extractAccountName(call: CallDetails): string | null {
+	for (const ctx of call.context ?? []) {
+		for (const obj of ctx.objects ?? []) {
+			if (obj.objectType === 'Account') {
+				for (const field of obj.fields ?? []) {
+					if (field.name.toLowerCase() === 'name') {
+						return field.value;
+					}
+				}
+			}
+		}
+	}
+	return null;
+}
+
+/**
+ * Format call details response with adaptive output.
+ * Uses rich per-call blocks when content data is present,
+ * falls back to a compact table for metadata-only results.
  */
 export function formatCallDetailsResponse(
 	response: CallDetailsResponse,
+	totalBeforeFilter?: number,
 ): string {
 	const lines: string[] = [];
 
-	lines.push(`**Calls** (${response.records.totalRecords} total)\n`);
+	// Header with optional filter count
+	const count = response.calls.length;
+	if (
+		totalBeforeFilter !== undefined &&
+		totalBeforeFilter !== count
+	) {
+		lines.push(`**Calls** (${count} of ${totalBeforeFilter} matched)\n`);
+	} else {
+		lines.push(`**Calls** (${count} total)\n`);
+	}
 
 	if (response.calls.length === 0) {
 		lines.push('No calls found.');
 		return lines.join('\n');
 	}
 
-	lines.push('| ID | Title | Date | Duration | Scope |');
-	lines.push('|---|---|---|---|---|');
+	// Use rich format when content data is available
+	if (hasRichContent(response.calls)) {
+		for (const call of response.calls) {
+			lines.push(formatCallDetailsBlock(call));
+			lines.push('');
+		}
+	} else {
+		// Fallback to compact table for metadata-only results
+		lines.push('| ID | Title | Date | Duration | Scope |');
+		lines.push('|---|---|---|---|---|');
 
-	for (const call of response.calls) {
-		const meta = call.metaData;
-		const date = meta.started
-			? new Date(meta.started).toLocaleDateString()
-			: '-';
-		const duration = meta.duration ? `${Math.round(meta.duration / 60)}m` : '-';
-		const title = meta.title?.slice(0, 50) ?? '-';
-		lines.push(
-			`| ${meta.id} | ${escapeMarkdown(title)} | ${date} | ${duration} | ${meta.scope ?? '-'} |`,
-		);
+		for (const call of response.calls) {
+			const meta = call.metaData;
+			const date = meta.started
+				? new Date(meta.started).toLocaleDateString()
+				: '-';
+			const duration = meta.duration
+				? `${Math.round(meta.duration / 60)}m`
+				: '-';
+			const title = meta.title?.slice(0, 50) ?? '-';
+			lines.push(
+				`| ${meta.id} | ${escapeMarkdown(title)} | ${date} | ${duration} | ${meta.scope ?? '-'} |`,
+			);
+		}
 	}
 
-	if (response.records.cursor) {
-		lines.push(
-			`\n*More results available. Cursor:* \`${response.records.cursor}\``,
+	return lines.join('\n');
+}
+
+/**
+ * Format a single call as a rich block for search results.
+ */
+function formatCallDetailsBlock(call: CallDetails): string {
+	const lines: string[] = [];
+	const meta = call.metaData;
+
+	// Title
+	lines.push(`### ${escapeMarkdown(meta.title?.slice(0, 80) ?? 'Untitled Call')}`);
+
+	// Metadata line
+	const metaParts: string[] = [`**ID:** ${meta.id}`];
+	if (meta.started) {
+		metaParts.push(
+			`**Date:** ${new Date(meta.started).toLocaleDateString()}`,
 		);
+	}
+	if (meta.duration) {
+		metaParts.push(`**Duration:** ${Math.round(meta.duration / 60)}m`);
+	}
+	if (meta.scope) {
+		metaParts.push(`**Scope:** ${meta.scope}`);
+	}
+	lines.push(metaParts.join(' | '));
+
+	// Account name from CRM context
+	const account = extractAccountName(call);
+	if (account) {
+		lines.push(`**Account:** ${escapeMarkdown(account)}`);
+	}
+
+	// Participants (compact single line)
+	if (call.parties && call.parties.length > 0) {
+		const participants = call.parties
+			.map((p) => {
+				const name = p.name ?? p.emailAddress ?? 'Unknown';
+				const role = p.affiliation ? ` (${p.affiliation})` : '';
+				return `${escapeMarkdown(name)}${role}`;
+			})
+			.join(', ');
+		lines.push(`**Participants:** ${participants}`);
+	}
+
+	// Brief summary
+	if (call.content?.brief) {
+		lines.push(`**Summary:** ${escapeMarkdown(call.content.brief)}`);
+	}
+
+	// Topics (compact)
+	if (call.content?.topics && call.content.topics.length > 0) {
+		const topics = call.content.topics
+			.map(
+				(t) =>
+					`${escapeMarkdown(t.name)} (${Math.round((t.duration ?? 0) / 60)}m)`,
+			)
+			.join(', ');
+		lines.push(`**Topics:** ${topics}`);
+	}
+
+	// Key Points (optional)
+	if (call.content?.keyPoints && call.content.keyPoints.length > 0) {
+		lines.push('**Key Points:**');
+		for (const point of call.content.keyPoints) {
+			lines.push(`- ${escapeMarkdown(point.text)}`);
+		}
+	}
+
+	// Trackers (optional, compact)
+	if (call.content?.trackers && call.content.trackers.length > 0) {
+		const trackers = call.content.trackers
+			.map((t) => `${escapeMarkdown(t.name)} (${t.count}x)`)
+			.join(', ');
+		lines.push(`**Trackers:** ${trackers}`);
+	}
+
+	// Highlights (optional)
+	if (call.content?.highlights && call.content.highlights.length > 0) {
+		lines.push('**Highlights:**');
+		for (const section of call.content.highlights) {
+			if (section.title) {
+				lines.push(`  *${escapeMarkdown(section.title)}*`);
+			}
+			for (const item of section.items ?? []) {
+				if (item.text) {
+					lines.push(`  - ${escapeMarkdown(item.text)}`);
+				}
+			}
+		}
+	}
+
+	// Speakers (optional)
+	if (call.interaction?.speakers && call.interaction.speakers.length > 0) {
+		const speakerMap = new Map<string, string>();
+		for (const p of call.parties ?? []) {
+			if (p.id) {
+				speakerMap.set(p.id, p.name ?? p.emailAddress ?? 'Unknown');
+			}
+		}
+		const speakers = call.interaction.speakers
+			.map((s) => {
+				const name = speakerMap.get(s.id) ?? s.id;
+				const time = s.talkTime
+					? `${Math.round(s.talkTime / 60)}m`
+					: '-';
+				return `${escapeMarkdown(name)}: ${time}`;
+			})
+			.join(', ');
+		lines.push(`**Talk Time:** ${speakers}`);
+	}
+
+	// Comments (optional)
+	if (call.collaboration?.publicComments && call.collaboration.publicComments.length > 0) {
+		lines.push('**Comments:**');
+		for (const comment of call.collaboration.publicComments) {
+			if (comment.comment) {
+				lines.push(`- ${escapeMarkdown(comment.comment)}`);
+			}
+		}
 	}
 
 	return lines.join('\n');

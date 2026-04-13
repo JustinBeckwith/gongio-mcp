@@ -173,7 +173,7 @@ describe('formatCallDetailsResponse', () => {
 		expect(result).toContain('Internal');
 	});
 
-	it('includes cursor when available', () => {
+	it('does not display cursor since auto-pagination handles paging', () => {
 		const response: CallDetailsResponse = {
 			requestId: 'test-123',
 			records: {
@@ -186,7 +186,7 @@ describe('formatCallDetailsResponse', () => {
 		};
 
 		const result = formatCallDetailsResponse(response);
-		expect(result).toContain('`next-page-cursor`');
+		expect(result).not.toContain('cursor');
 	});
 
 	it('escapes pipe characters in titles', () => {
@@ -231,6 +231,196 @@ describe('formatCallDetailsResponse', () => {
 		const result = formatCallDetailsResponse(response);
 		expect(result).toContain('| 999 |');
 		expect(result).toContain('| - |'); // Missing fields show as '-'
+	});
+
+	it('shows rich format when calls have parties', () => {
+		const response: CallDetailsResponse = {
+			requestId: 'test-123',
+			records: {
+				totalRecords: 1,
+				currentPageSize: 1,
+				currentPageNumber: 0,
+			},
+			calls: [
+				{
+					metaData: {
+						id: '123',
+						title: 'Customer Sync',
+						started: '2024-01-15T10:00:00Z',
+						duration: 1800,
+						scope: 'External',
+					},
+					parties: [
+						{
+							name: 'Alice',
+							emailAddress: 'alice@example.com',
+							affiliation: 'Internal',
+						},
+						{ name: 'Bob', affiliation: 'External' },
+					],
+				},
+			],
+		};
+
+		const result = formatCallDetailsResponse(response);
+		expect(result).toContain('### Customer Sync');
+		expect(result).toContain('**Participants:** Alice (Internal), Bob (External)');
+		expect(result).not.toContain('| ID | Title |'); // No table format
+	});
+
+	it('shows rich format with brief and topics', () => {
+		const response: CallDetailsResponse = {
+			requestId: 'test-123',
+			records: {
+				totalRecords: 1,
+				currentPageSize: 1,
+				currentPageNumber: 0,
+			},
+			calls: [
+				{
+					metaData: { id: '123', title: 'Demo Call' },
+					parties: [{ name: 'Alice' }],
+					content: {
+						brief: 'Discussed product roadmap and pricing.',
+						topics: [
+							{ name: 'Pricing', duration: 600 },
+							{ name: 'Roadmap', duration: 900 },
+						],
+					},
+				},
+			],
+		};
+
+		const result = formatCallDetailsResponse(response);
+		expect(result).toContain(
+			'**Summary:** Discussed product roadmap and pricing.',
+		);
+		expect(result).toContain('**Topics:** Pricing (10m), Roadmap (15m)');
+	});
+
+	it('shows "N of M matched" when totalBeforeFilter differs', () => {
+		const response: CallDetailsResponse = {
+			requestId: 'test-123',
+			records: {
+				totalRecords: 5,
+				currentPageSize: 5,
+				currentPageNumber: 0,
+			},
+			calls: [
+				{ metaData: { id: '1', title: 'Call 1' } },
+				{ metaData: { id: '2', title: 'Call 2' } },
+				{ metaData: { id: '3', title: 'Call 3' } },
+				{ metaData: { id: '4', title: 'Call 4' } },
+				{ metaData: { id: '5', title: 'Call 5' } },
+			],
+		};
+
+		const result = formatCallDetailsResponse(response, 100);
+		expect(result).toContain('**Calls** (5 of 100 matched)');
+	});
+
+	it('shows "N total" when totalBeforeFilter matches count', () => {
+		const response: CallDetailsResponse = {
+			requestId: 'test-123',
+			records: {
+				totalRecords: 2,
+				currentPageSize: 2,
+				currentPageNumber: 0,
+			},
+			calls: [
+				{ metaData: { id: '1', title: 'Call 1' } },
+				{ metaData: { id: '2', title: 'Call 2' } },
+			],
+		};
+
+		const result = formatCallDetailsResponse(response, 2);
+		expect(result).toContain('**Calls** (2 total)');
+	});
+
+	it('shows CRM account name from context', () => {
+		const response: CallDetailsResponse = {
+			requestId: 'test-123',
+			records: {
+				totalRecords: 1,
+				currentPageSize: 1,
+				currentPageNumber: 0,
+			},
+			calls: [
+				{
+					metaData: { id: '123', title: 'Acme Sync' },
+					parties: [{ name: 'Alice' }],
+					context: [
+						{
+							system: 'HubSpot',
+							objects: [
+								{
+									objectType: 'Account',
+									objectId: '456',
+									fields: [{ name: 'Name', value: 'Acme Corporation' }],
+								},
+							],
+						},
+					],
+				},
+			],
+		};
+
+		const result = formatCallDetailsResponse(response);
+		expect(result).toContain('**Account:** Acme Corporation');
+	});
+
+	it('renders key points when present', () => {
+		const response: CallDetailsResponse = {
+			requestId: 'test-123',
+			records: {
+				totalRecords: 1,
+				currentPageSize: 1,
+				currentPageNumber: 0,
+			},
+			calls: [
+				{
+					metaData: { id: '123', title: 'Review' },
+					parties: [{ name: 'Alice' }],
+					content: {
+						keyPoints: [
+							{ text: 'Need to follow up on pricing' },
+							{ text: 'Demo scheduled for next week' },
+						],
+					},
+				},
+			],
+		};
+
+		const result = formatCallDetailsResponse(response);
+		expect(result).toContain('**Key Points:**');
+		expect(result).toContain('- Need to follow up on pricing');
+		expect(result).toContain('- Demo scheduled for next week');
+	});
+
+	it('renders trackers when present', () => {
+		const response: CallDetailsResponse = {
+			requestId: 'test-123',
+			records: {
+				totalRecords: 1,
+				currentPageSize: 1,
+				currentPageNumber: 0,
+			},
+			calls: [
+				{
+					metaData: { id: '123', title: 'Sales Call' },
+					parties: [{ name: 'Alice' }],
+					content: {
+						trackers: [
+							{ id: '1', name: 'Pricing', count: 3 },
+							{ id: '2', name: 'Competitor', count: 1 },
+						],
+					},
+				},
+			],
+		};
+
+		const result = formatCallDetailsResponse(response);
+		expect(result).toContain('**Trackers:** Pricing (3x), Competitor (1x)');
 	});
 });
 
