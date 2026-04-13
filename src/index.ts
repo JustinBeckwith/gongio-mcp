@@ -181,7 +181,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 			{
 				name: 'search_calls',
 				description:
-					'Search for Gong calls with advanced filters including date range, workspace, primary users (call hosts), and specific call IDs. More flexible than list_calls for targeted queries.',
+					'Search for Gong calls with filters including date range, primary users (hosts), participant users or emails, customer/account name, and specific call IDs. Returns all matching calls with participant info, brief summary, and topics by default. Use the include parameter to request additional data like key points, trackers, or highlights.',
 				inputSchema: {
 					type: 'object',
 					properties: {
@@ -208,11 +208,35 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 						primaryUserIds: {
 							type: 'array',
 							description:
-								'Filter by primary user IDs (call hosts). Array of numeric strings.',
+								'Filter by primary user IDs (call hosts only, server-side). Use participantUserIds to find calls where a user was any participant.',
 							items: {
 								type: 'string',
 								pattern: '^\\d{1,20}$',
 							},
+						},
+						participantUserIds: {
+							type: 'array',
+							description:
+								'Filter by participant user IDs. Matches calls where any participant (host, attendee, or invitee) has a matching Gong user ID. Requires a date range for optimal performance.',
+							items: {
+								type: 'string',
+								pattern: '^\\d{1,20}$',
+							},
+						},
+						participantEmails: {
+							type: 'array',
+							description:
+								'Filter by participant email addresses (case-insensitive). Matches calls where any participant has a matching email.',
+							items: {
+								type: 'string',
+								format: 'email',
+							},
+						},
+						customerName: {
+							type: 'string',
+							description:
+								'Filter by customer/account name (case-insensitive substring match). Searches CRM account name, external participant email domains, and call titles.',
+							minLength: 1,
 						},
 						callIds: {
 							type: 'array',
@@ -223,11 +247,23 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 								pattern: '^\\d{1,20}$',
 							},
 						},
-						cursor: {
-							type: 'string',
+						include: {
+							type: 'array',
 							description:
-								'Pagination cursor for fetching next page of results',
-							minLength: 1,
+								'Additional data to include beyond the defaults (parties, brief, topics). Options: keyPoints, trackers, highlights, speakers, comments, context (CRM data), outline (very large), media (audio/video URLs).',
+							items: {
+								type: 'string',
+								enum: [
+									'keyPoints',
+									'trackers',
+									'highlights',
+									'speakers',
+									'comments',
+									'context',
+									'outline',
+									'media',
+								],
+							},
 						},
 					},
 				},
@@ -621,12 +657,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 			case 'search_calls': {
 				// Validate input with Zod schema (will throw ZodError if invalid)
 				const validated = searchCallsRequestSchema.parse(args ?? {});
-				const result = await gong.searchCalls(validated);
+				const { response, totalBeforeFilter } =
+					await gong.searchCallsAll(validated);
 				return {
 					content: [
 						{
 							type: 'text',
-							text: formatCallDetailsResponse(result),
+							text: formatCallDetailsResponse(
+								response,
+								totalBeforeFilter,
+							),
 						},
 					],
 				};
