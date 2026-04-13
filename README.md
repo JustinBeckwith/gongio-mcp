@@ -15,7 +15,7 @@ An MCP (Model Context Protocol) server that provides access to your Gong.io data
 | [`get_call`](#get_call) | Get metadata for a specific call |
 | [`get_call_summary`](#get_call_summary) | AI summary: key points, topics, action items |
 | [`get_call_transcript`](#get_call_transcript) | Full speaker-attributed transcript (paginated) |
-| [`search_calls`](#search_calls) | Advanced call search by host, ID, date range |
+| [`search_calls`](#search_calls) | Advanced call search by participant, customer, host, date range |
 | [`search_calls_by_account`](#search_calls_by_account) | Find calls involving a specific account/company by email domain |
 | [`search_calls_by_opportunity`](#search_calls_by_opportunity) | Find calls linked to specific CRM Opportunities |
 | [`search_transcripts`](#search_transcripts) | Free-text keyword search across transcript sentences |
@@ -223,7 +223,7 @@ Get the raw transcript with speaker attribution. Transcripts are paginated (defa
 <details>
 <summary><code>search_calls</code> — Advanced call search</summary>
 
-Search calls with advanced filters. More flexible than `list_calls` for targeted queries.
+Search calls with advanced filters including participant lookup, customer name search, and rich content selection. Automatically paginates through all results and returns participant info, brief summary, and topics by default.
 
 **Parameters:**
 
@@ -232,9 +232,17 @@ Search calls with advanced filters. More flexible than `list_calls` for targeted
 | `fromDateTime` | No | Start date in ISO 8601 format |
 | `toDateTime` | No | End date in ISO 8601 format |
 | `workspaceId` | No | Filter by workspace ID (use `list_workspaces` to find IDs) |
-| `primaryUserIds` | No | Array of user IDs to filter by call host |
+| `primaryUserIds` | No | Array of user IDs to filter by call host (server-side) |
+| `participantUserIds` | No | Array of user IDs — matches any participant (host, attendee, or invitee) |
+| `participantEmails` | No | Array of email addresses — matches any participant (case-insensitive) |
+| `customerName` | No | Customer/account name — fuzzy matches CRM account name, external email domains, and call titles |
 | `callIds` | No | Array of specific call IDs to retrieve |
-| `cursor` | No | Pagination cursor |
+| `include` | No | Additional data to return: `keyPoints`, `trackers`, `highlights`, `speakers`, `comments`, `context`, `outline`, `media` |
+
+**Notes:**
+- `participantUserIds` and `participantEmails` find calls where the user was _any_ participant, not just the host. This requires fetching calls by date range and filtering client-side, so providing a date range is recommended for performance.
+- `primaryUserIds` and `participantUserIds` can be combined: primary narrows the server query, participant post-filters the results.
+- `customerName` is a case-insensitive substring match checked against three sources: CRM account name, external participant email domains, and the call title.
 
 </details>
 
