@@ -141,6 +141,7 @@ export function filterByCustomerName(
 					for (const field of obj.fields ?? []) {
 						if (
 							field.name.toLowerCase() === 'name' &&
+							typeof field.value === 'string' &&
 							field.value.toLowerCase().includes(needle)
 						) {
 							return true;

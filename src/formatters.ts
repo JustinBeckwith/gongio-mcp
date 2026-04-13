@@ -83,7 +83,10 @@ function extractAccountName(call: CallDetails): string | null {
 		for (const obj of ctx.objects ?? []) {
 			if (obj.objectType === 'Account') {
 				for (const field of obj.fields ?? []) {
-					if (field.name.toLowerCase() === 'name') {
+					if (
+						field.name.toLowerCase() === 'name' &&
+						typeof field.value === 'string'
+					) {
 						return field.value;
 					}
 				}
