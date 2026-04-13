@@ -4,6 +4,7 @@
  */
 
 import {
+	type CallDetails,
 	type CallDetailsResponse,
 	type CallsResponse,
 	type CallTranscriptMatches,
@@ -88,6 +89,8 @@ export function buildContentSelector(
 	}
 	return selector;
 }
+
+export const MAX_SEARCH_PAGES = 50;
 
 export interface GongConfig {
 	accessKey: string;
@@ -294,6 +297,51 @@ export class GongClient {
 
 		const response = await this.request('POST', '/calls/extensive', body);
 		return parseCallDetailsResponse(response);
+	}
+
+	/**
+	 * Fetch all pages of search results via auto-pagination.
+	 * Returns accumulated calls and the total count before any client-side filtering.
+	 */
+	async searchCallsAll(options: {
+		fromDateTime?: string;
+		toDateTime?: string;
+		workspaceId?: string;
+		primaryUserIds?: string[];
+		callIds?: string[];
+		include?: string[];
+	}): Promise<{ response: CallDetailsResponse; totalBeforeFilter: number }> {
+		const allCalls: CallDetails[] = [];
+		let cursor: string | undefined;
+		let pageCount = 0;
+		let requestId = '';
+
+		do {
+			const page = await this.searchCalls({ ...options, cursor });
+			allCalls.push(...page.calls);
+			cursor = page.records.cursor;
+			requestId = page.requestId;
+			pageCount++;
+		} while (cursor && pageCount < MAX_SEARCH_PAGES);
+
+		if (pageCount >= MAX_SEARCH_PAGES && cursor) {
+			console.error(
+				`search_calls: reached max page limit (${MAX_SEARCH_PAGES}), returning partial results`,
+			);
+		}
+
+		return {
+			response: {
+				requestId,
+				records: {
+					totalRecords: allCalls.length,
+					currentPageSize: allCalls.length,
+					currentPageNumber: 0,
+				},
+				calls: allCalls,
+			},
+			totalBeforeFilter: allCalls.length,
+		};
 	}
 
 	/**

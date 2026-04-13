@@ -676,6 +676,145 @@ describe('GongClient', () => {
 			expect(result.calls?.[0]?.id).toBe('111222333');
 		});
 	});
+
+	describe('searchCallsAll', () => {
+		it('returns all calls from a single page', async () => {
+			const mockResponse: CallDetailsResponse = {
+				requestId: 'req-1',
+				records: {
+					totalRecords: 2,
+					currentPageSize: 2,
+					currentPageNumber: 0,
+				},
+				calls: [
+					{ metaData: { id: '1', title: 'Call 1' } },
+					{ metaData: { id: '2', title: 'Call 2' } },
+				],
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			const { response, totalBeforeFilter } =
+				await client.searchCallsAll({});
+			expect(response.calls).toHaveLength(2);
+			expect(totalBeforeFilter).toBe(2);
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+		});
+
+		it('accumulates calls across multiple pages', async () => {
+			const page1: CallDetailsResponse = {
+				requestId: 'req-1',
+				records: {
+					totalRecords: 3,
+					currentPageSize: 2,
+					currentPageNumber: 0,
+					cursor: 'page-2',
+				},
+				calls: [
+					{ metaData: { id: '1', title: 'Call 1' } },
+					{ metaData: { id: '2', title: 'Call 2' } },
+				],
+			};
+			const page2: CallDetailsResponse = {
+				requestId: 'req-2',
+				records: {
+					totalRecords: 3,
+					currentPageSize: 1,
+					currentPageNumber: 1,
+				},
+				calls: [{ metaData: { id: '3', title: 'Call 3' } }],
+			};
+
+			fetchMock
+				.mockResolvedValueOnce({
+					ok: true,
+					json: async () => page1,
+				})
+				.mockResolvedValueOnce({
+					ok: true,
+					json: async () => page2,
+				});
+
+			const { response, totalBeforeFilter } =
+				await client.searchCallsAll({});
+			expect(response.calls).toHaveLength(3);
+			expect(totalBeforeFilter).toBe(3);
+			expect(fetchMock).toHaveBeenCalledTimes(2);
+
+			// Verify cursor was passed on second call
+			const secondCallBody = JSON.parse(
+				fetchMock.mock.calls[1][1].body,
+			);
+			expect(secondCallBody.cursor).toBe('page-2');
+		});
+
+		it('returns empty results for no calls', async () => {
+			const mockResponse: CallDetailsResponse = {
+				requestId: 'req-1',
+				records: {
+					totalRecords: 0,
+					currentPageSize: 0,
+					currentPageNumber: 0,
+				},
+				calls: [],
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			const { response, totalBeforeFilter } =
+				await client.searchCallsAll({});
+			expect(response.calls).toHaveLength(0);
+			expect(totalBeforeFilter).toBe(0);
+		});
+
+		it('passes contentSelector through on every page request', async () => {
+			const page1: CallDetailsResponse = {
+				requestId: 'req-1',
+				records: {
+					totalRecords: 2,
+					currentPageSize: 1,
+					currentPageNumber: 0,
+					cursor: 'page-2',
+				},
+				calls: [{ metaData: { id: '1', title: 'Call 1' } }],
+			};
+			const page2: CallDetailsResponse = {
+				requestId: 'req-2',
+				records: {
+					totalRecords: 2,
+					currentPageSize: 1,
+					currentPageNumber: 1,
+				},
+				calls: [{ metaData: { id: '2', title: 'Call 2' } }],
+			};
+
+			fetchMock
+				.mockResolvedValueOnce({
+					ok: true,
+					json: async () => page1,
+				})
+				.mockResolvedValueOnce({
+					ok: true,
+					json: async () => page2,
+				});
+
+			await client.searchCallsAll({ include: ['keyPoints'] });
+
+			for (const call of fetchMock.mock.calls) {
+				const body = JSON.parse(call[1].body);
+				expect(body.contentSelector).toBeDefined();
+				expect(
+					body.contentSelector.exposedFields.content.keyPoints,
+				).toBe(true);
+			}
+		});
+	});
 });
 
 describe('buildContentSelector', () => {
