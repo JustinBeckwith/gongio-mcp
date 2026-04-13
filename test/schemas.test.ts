@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 import {
+	callContentSchema,
 	getCallRequestSchema,
 	getCallSummaryRequestSchema,
 	getCallTranscriptRequestSchema,
@@ -157,6 +158,62 @@ describe('searchCallsRequestSchema', () => {
 			callIds: ['123456789'],
 		});
 		expect(result.success).toBe(true);
+	});
+
+	it('accepts valid participantUserIds array', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			participantUserIds: ['123', '456'],
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects invalid participantUserIds format', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			participantUserIds: ['abc'],
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('accepts valid participantEmails array', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			participantEmails: ['user@example.com'],
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects invalid participantEmails', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			participantEmails: ['not-an-email'],
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('accepts valid customerName', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			customerName: 'Acme Corp',
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects empty customerName', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			customerName: '',
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('accepts valid include values', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			include: ['keyPoints', 'trackers', 'highlights'],
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects invalid include values', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			include: ['notAValidOption'],
+		});
+		expect(result.success).toBe(false);
 	});
 });
 
@@ -472,5 +529,31 @@ describe('validate helper functions', () => {
 			includeAvatars: true,
 		});
 		expect(result.includeAvatars).toBe(true);
+	});
+});
+
+describe('callContentSchema highlights', () => {
+	it('parses content with highlights array', () => {
+		const result = callContentSchema.safeParse({
+			highlights: [
+				{
+					title: 'Key Decisions',
+					items: [{ text: 'Decided to proceed', startTimes: [120] }],
+				},
+			],
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('handles null highlights', () => {
+		const result = callContentSchema.safeParse({
+			highlights: null,
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('handles missing highlights', () => {
+		const result = callContentSchema.safeParse({});
+		expect(result.success).toBe(true);
 	});
 });

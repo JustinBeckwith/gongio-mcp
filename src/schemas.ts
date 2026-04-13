@@ -63,6 +63,23 @@ export const listCallsRequestSchema = z
 export type ListCallsRequest = z.infer<typeof listCallsRequestSchema>;
 
 /**
+ * Valid values for the search_calls include parameter.
+ * Controls which additional content fields are returned beyond the defaults.
+ */
+export const searchCallsIncludeSchema = z.enum([
+	'keyPoints',
+	'trackers',
+	'highlights',
+	'speakers',
+	'comments',
+	'context',
+	'outline',
+	'media',
+]);
+
+export type SearchCallsInclude = z.infer<typeof searchCallsIncludeSchema>;
+
+/**
  * POST /v2/calls/extensive - Search calls with filters
  */
 export const searchCallsRequestSchema = z
@@ -72,7 +89,10 @@ export const searchCallsRequestSchema = z
 		workspaceId: gongIdSchema.optional(),
 		primaryUserIds: z.array(gongIdSchema).optional(),
 		callIds: z.array(gongIdSchema).optional(),
-		cursor: cursorSchema.optional(),
+		participantUserIds: z.array(gongIdSchema).optional(),
+		participantEmails: z.array(z.string().email()).optional(),
+		customerName: z.string().min(1).optional(),
+		include: z.array(searchCallsIncludeSchema).optional(),
 	})
 	.refine(
 		(data) => {
@@ -409,6 +429,22 @@ export const keyPointSchema = z.object({
 });
 
 /**
+ * Highlight item within a highlight section
+ */
+export const highlightItemSchema = z.object({
+	text: z.string().nullish(),
+	startTimes: z.array(z.number()).nullish(),
+});
+
+/**
+ * Highlight section grouping related highlights
+ */
+export const highlightSectionSchema = z.object({
+	title: z.string().nullish(),
+	items: z.array(highlightItemSchema).nullish(),
+});
+
+/**
  * Call content (detailed data)
  */
 export const callContentSchema = z.object({
@@ -421,6 +457,7 @@ export const callContentSchema = z.object({
 		.nullish(),
 	brief: z.string().nullish(),
 	outline: z.array(outlineSectionSchema).nullish(),
+	highlights: z.array(highlightSectionSchema).nullish(),
 	callOutcome: callOutcomeSchema.nullish(),
 	keyPoints: z.array(keyPointSchema).nullish(),
 });
