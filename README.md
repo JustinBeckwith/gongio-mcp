@@ -227,17 +227,51 @@ Search calls with advanced filters including participant lookup, customer name s
 
 **Parameters:**
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `fromDateTime` | No | Start date in ISO 8601 format |
-| `toDateTime` | No | End date in ISO 8601 format |
-| `workspaceId` | No | Filter by workspace ID (use `list_workspaces` to find IDs) |
-| `primaryUserIds` | No | Array of user IDs to filter by call host (server-side) |
-| `participantUserIds` | No | Array of user IDs — matches any participant (host, attendee, or invitee) |
-| `participantEmails` | No | Array of email addresses — matches any participant (case-insensitive) |
-| `customerName` | No | Customer/account name — fuzzy matches CRM account name, external email domains, and call titles |
-| `callIds` | No | Array of specific call IDs to retrieve |
-| `include` | No | Additional data to return — see table below |
+*Date & workspace*
+
+| Parameter | Description |
+|-----------|-------------|
+| `fromDateTime` | Start date in ISO 8601 format |
+| `toDateTime` | End date in ISO 8601 format |
+| `workspaceId` | Filter by workspace ID (use `list_workspaces` to find IDs) |
+| `callIds` | Array of specific call IDs to retrieve |
+
+*Host / participant*
+
+| Parameter | Description |
+|-----------|-------------|
+| `primaryUserIds` | Host user IDs (server-side) |
+| `primaryUserEmails` | Host emails (case-insensitive) |
+| `excludePrimaryUserIds` | Exclude these host user IDs |
+| `participantUserIds` | Any participant (host/attendee/invitee) user IDs |
+| `excludeParticipantUserIds` | Exclude calls where any participant has these user IDs |
+| `participantEmails` | Any participant emails (case-insensitive) |
+| `excludeParticipantEmails` | Exclude calls where any participant has these emails |
+
+*Content & customer*
+
+| Parameter | Description |
+|-----------|-------------|
+| `customerName` | Fuzzy match against CRM account name, external email domains, and titles |
+| `titleContains` | Substring match on call title (case-insensitive) |
+| `trackers` | Calls where matching tracker(s) fired (count > 0). Workspace-specific — use `get_trackers` to discover |
+
+*Metadata*
+
+| Parameter | Description |
+|-----------|-------------|
+| `scope` | `External`, `Internal`, or `Unknown` |
+| `direction` | `Inbound`, `Outbound`, `Conference`, or `Unknown` |
+| `system` | Conferencing platform (e.g., `Zoom`) — case-insensitive substring |
+| `language` | Language code (e.g., `eng`) — case-insensitive exact match |
+| `minDuration` | Minimum duration in seconds |
+| `maxDuration` | Maximum duration in seconds |
+
+*Response shape*
+
+| Parameter | Description |
+|-----------|-------------|
+| `include` | Additional data to return — see table below |
 
 **`include` options:**
 
@@ -255,9 +289,41 @@ Search calls with advanced filters including participant lookup, customer name s
 Defaults (always returned): participants, brief summary, and topics — ~3KB per call.
 
 **Notes:**
-- `participantUserIds` and `participantEmails` find calls where the user was _any_ participant, not just the host. This requires fetching calls by date range and filtering client-side, so providing a date range is recommended for performance.
-- `primaryUserIds` and `participantUserIds` can be combined: primary narrows the server query, participant post-filters the results.
+- Auto-paginates up to ~5000 calls (50 API pages). For larger result sets, narrow the date range or add filters.
+- Participant and customer filters run client-side after fetching. Provide a date range when possible — unbounded queries pull everything in the workspace.
+- `primaryUserIds` and `participantUserIds` compose: primary narrows the server query, participant post-filters the results.
 - `customerName` is a case-insensitive substring match checked against three sources: CRM account name, external participant email domains, and the call title.
+- **Tracker names vary by workspace.** Call `get_trackers` first to see what is configured before using the `trackers` filter.
+- When `trackers` filter is set, tracker content is automatically included in the response (no need to also add `trackers` to `include`).
+- When no filters match, the tool returns an empty result ("No calls found") rather than an error.
+
+**Example workflows:**
+
+```js
+// 1. Churn-risk scan: economic and objection signals on customer calls
+search_calls({
+  fromDateTime: "2026-01-01T00:00:00Z",
+  trackers: ["economic", "objection"],
+  scope: "External",
+  minDuration: 600
+})
+
+// 2. Competitive intel for a specific customer
+search_calls({
+  customerName: "Acme",
+  trackers: ["competitor"],
+  fromDateTime: "2026-01-01T00:00:00Z"
+})
+
+// 3. Coaching queue: rep's substantive external calls (excluding manager's)
+search_calls({
+  participantEmails: ["rep@example.com"],
+  excludeParticipantEmails: ["manager@example.com"],
+  scope: "External",
+  minDuration: 900,
+  fromDateTime: "2026-04-01T00:00:00Z"
+})
+```
 
 </details>
 
