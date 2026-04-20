@@ -839,7 +839,7 @@ describe('formatTrackersResponse', () => {
 		expect(result).toContain('No trackers found.');
 	});
 
-	it('limits keywords to 5 per tracker', () => {
+	it('shows all keywords and a count for each tracker', () => {
 		const response: TrackersSettingsResponse = {
 			keywordTrackers: [
 				{
@@ -862,9 +862,9 @@ describe('formatTrackersResponse', () => {
 		};
 
 		const result = formatTrackersResponse(response);
-		// Should show max 5 keywords
+		expect(result).toContain('**Keyword count:** 6');
 		expect(result).toContain('price');
-		expect(result).not.toContain('cheap'); // 6th keyword should be omitted
+		expect(result).toContain('cheap'); // No longer truncated
 	});
 });
 

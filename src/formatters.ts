@@ -573,22 +573,28 @@ export function formatTrackersResponse(
 		return lines.join('\n');
 	}
 
-	lines.push('| Name | Affiliation | Tracks | Keywords |');
-	lines.push('|------|-------------|--------|----------|');
-
 	for (const tracker of trackers) {
-		const name = escapeMarkdown(tracker.trackerName?.slice(0, 40) ?? '-');
-		const affiliation = tracker.affiliation ?? '-';
-		const tracks = tracker.saidAt ?? '-';
+		const name = tracker.trackerName ?? 'Unnamed Tracker';
+		const keywords = (tracker.languageKeywords ?? []).flatMap(
+			(lk) => lk.keywords ?? [],
+		);
 
-		const allKeywords = (tracker.languageKeywords ?? [])
-			.flatMap((lk) => lk.keywords ?? [])
-			.slice(0, 5)
-			.map((k) => escapeMarkdown(k))
-			.join(', ');
-		const keywordsDisplay = allKeywords || '-';
+		lines.push(`### ${escapeMarkdown(name)}`);
+		const metaParts: string[] = [];
+		if (tracker.affiliation) {
+			metaParts.push(`**Affiliation:** ${tracker.affiliation}`);
+		}
+		if (tracker.saidAt) {
+			metaParts.push(`**Tracks:** ${tracker.saidAt}`);
+		}
+		metaParts.push(`**Keyword count:** ${keywords.length}`);
+		lines.push(metaParts.join(' | '));
 
-		lines.push(`| ${name} | ${affiliation} | ${tracks} | ${keywordsDisplay} |`);
+		if (keywords.length > 0) {
+			const display = keywords.map((k) => escapeMarkdown(k)).join(', ');
+			lines.push(`**Keywords:** ${display}`);
+		}
+		lines.push('');
 	}
 
 	return lines.join('\n');
