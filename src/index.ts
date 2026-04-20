@@ -160,7 +160,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 			{
 				name: 'list_users',
 				description:
-					'List all Gong users in your workspace. Returns user details including name, email, and title.',
+					'List all Gong users in the organization. Returns name, email, title, and user IDs. Useful when you need a Gong user ID for search_calls filters like primaryUserIds, though for most "find calls by this person" cases you can pass their email directly to primaryUserEmails or participantEmails instead.',
 				inputSchema: {
 					type: 'object',
 					properties: {
@@ -181,21 +181,37 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 			{
 				name: 'search_calls',
 				description:
-					'Search for Gong calls with a wide range of filters: date range, host, participant (user ID or email), customer/account, tracker mentions, scope, direction, system, language, title, and duration. Most filters have a matching exclude variant. Returns participant info, brief summary, and topics by default; use include to request additional data (key points, trackers, highlights, etc.).',
+					`Search Gong calls with rich filters. The primary tool for narrowing down calls before drilling in with get_call_summary or get_call_transcript.
+
+Supported filters:
+- When: fromDateTime, toDateTime (ISO 8601). Always prefer a date range — unbounded queries pull every call in the workspace.
+- Who hosted: primaryUserIds, primaryUserEmails, excludePrimaryUserIds.
+- Who participated (host OR attendee OR invitee): participantUserIds, participantEmails, excludeParticipantUserIds, excludeParticipantEmails.
+- Customer/topic: customerName (CRM account name, email domain, or title substring), titleContains, trackers (see note below).
+- Metadata: scope (External/Internal), direction, system (Zoom/Meet/…), language (eng/jpn/…), minDuration and maxDuration in seconds.
+- Output shape: include (array of keyPoints, trackers, highlights, speakers, comments, context, outline, media). Parties + brief + topics are always returned.
+
+Behavior:
+- Auto-paginates up to ~5000 calls. If a user asks for a broad question, guide them to narrow with a date range, scope, minDuration, or customerName first.
+- trackers filter does case-insensitive substring match on tracker names. Names are workspace-specific — call get_trackers first to see what's configured before guessing.
+- When the rich output would exceed the output cap, the tool auto-falls back to a compact table showing all IDs/titles. Use get_call_summary on specific IDs to go deeper.
+- Filters compose with AND logic (primaryUserIds + customerName = hosted by user X on customer Y calls).
+
+Usage pattern: narrow with search_calls → drill into specific calls with get_call_summary (AI summary) or get_call_transcript (exact quotes).`,
 				inputSchema: {
 					type: 'object',
 					properties: {
 						fromDateTime: {
 							type: 'string',
 							description:
-								'Start date/time filter in ISO 8601 format (e.g., 2024-01-01T00:00:00Z). Must be before toDateTime if both specified.',
+								'Start date/time filter in ISO 8601 format (e.g., 2024-01-01T00:00:00Z). Strongly recommended — without a date range, the tool pulls every call in the workspace. Must be before toDateTime if both specified.',
 							pattern:
 								'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$',
 						},
 						toDateTime: {
 							type: 'string',
 							description:
-								'End date/time filter in ISO 8601 format (e.g., 2024-01-31T23:59:59Z). Must be after fromDateTime if both specified.',
+								'End date/time filter in ISO 8601 format (e.g., 2024-01-31T23:59:59Z). Strongly recommended alongside fromDateTime. Must be after fromDateTime if both specified.',
 							pattern:
 								'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$',
 						},
@@ -337,7 +353,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 						include: {
 							type: 'array',
 							description:
-								'Additional data to include beyond the defaults (parties, brief, topics). Options: keyPoints, trackers, highlights, speakers, comments, context (CRM data), outline (very large), media (audio/video URLs).',
+								'Additional per-call data beyond the defaults (parties, brief, topics). Start lean and add fields as needed — each extra field multiplies response size by number of calls. Options: keyPoints (~5KB/call), trackers (~3KB/call, auto-added when trackers filter is used), highlights (~3KB/call), speakers (talk time, ~1KB/call), comments (varies), context (CRM links, ~1KB/call), outline (~80KB/call, AVOID unless you need full structure of one call), media (audio/video URLs).',
 							items: {
 								type: 'string',
 								enum: [
@@ -551,7 +567,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 			{
 				name: 'get_trackers',
 				description:
-					'List all keyword tracker definitions including tracked phrases, affiliation (who speaks them), and filter queries. Explains tracker hits visible in call summaries.',
+					'List keyword tracker definitions configured in a workspace, including every tracked phrase and which side is tracked (company/customer). Call this before using the trackers filter on search_calls so you know what names exist — workspace admins set these up and naming varies (e.g., "Competitors" vs "Competitor Mentions"). Also useful to explain tracker hits that appear in call summaries.',
 				inputSchema: {
 					type: 'object',
 					properties: {
