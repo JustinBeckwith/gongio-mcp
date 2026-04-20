@@ -5,6 +5,7 @@ import {
 	filterByCustomerName,
 	filterByParticipantEmails,
 	filterByParticipantUserIds,
+	filterByPrimaryUserEmails,
 	filterByTrackers,
 } from '../src/gong.js';
 import type {
@@ -1109,6 +1110,86 @@ describe('filterByCustomerName', () => {
 			{ metaData: { id: '1', title: null } },
 		];
 		const result = filterByCustomerName(sparse, 'anything');
+		expect(result).toHaveLength(0);
+	});
+});
+
+describe('filterByPrimaryUserEmails', () => {
+	const calls: CallDetails[] = [
+		{
+			metaData: { id: '1', title: 'Hosted by Alice', primaryUserId: '100' },
+			parties: [
+				{
+					userId: '100',
+					emailAddress: 'alice@example.com',
+					name: 'Alice',
+				},
+				{
+					userId: '200',
+					emailAddress: 'bob@example.com',
+					name: 'Bob',
+				},
+			],
+		},
+		{
+			metaData: { id: '2', title: 'Hosted by Bob', primaryUserId: '200' },
+			parties: [
+				{
+					userId: '200',
+					emailAddress: 'bob@example.com',
+					name: 'Bob',
+				},
+			],
+		},
+		{
+			metaData: { id: '3', title: 'No primary user' },
+			parties: [
+				{
+					userId: '100',
+					emailAddress: 'alice@example.com',
+					name: 'Alice',
+				},
+			],
+		},
+		{
+			metaData: {
+				id: '4',
+				title: 'Primary not in parties',
+				primaryUserId: '999',
+			},
+			parties: [
+				{
+					userId: '100',
+					emailAddress: 'alice@example.com',
+					name: 'Alice',
+				},
+			],
+		},
+	];
+
+	it('matches when primary user email is in list', () => {
+		const result = filterByPrimaryUserEmails(calls, ['alice@example.com']);
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('1');
+	});
+
+	it('is case-insensitive', () => {
+		const result = filterByPrimaryUserEmails(calls, ['ALICE@EXAMPLE.COM']);
+		expect(result).toHaveLength(1);
+	});
+
+	it('excludes calls with no primaryUserId', () => {
+		const result = filterByPrimaryUserEmails(calls, ['alice@example.com']);
+		expect(result.every((c) => c.metaData.id !== '3')).toBe(true);
+	});
+
+	it('excludes calls where primary user is not in parties', () => {
+		const result = filterByPrimaryUserEmails(calls, ['alice@example.com']);
+		expect(result.every((c) => c.metaData.id !== '4')).toBe(true);
+	});
+
+	it('returns empty when no email matches', () => {
+		const result = filterByPrimaryUserEmails(calls, ['nobody@example.com']);
 		expect(result).toHaveLength(0);
 	});
 });

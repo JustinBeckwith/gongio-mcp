@@ -117,6 +117,25 @@ export function filterByParticipantUserIds(
 }
 
 /**
+ * Filter calls to those hosted by a user whose email matches the provided list.
+ * Looks up the primary user inside the parties array by matching primaryUserId,
+ * then compares the email case-insensitively.
+ */
+export function filterByPrimaryUserEmails(
+	calls: CallDetails[],
+	emails: string[],
+): CallDetails[] {
+	const emailSet = new Set(emails.map((e) => e.toLowerCase()));
+	return calls.filter((call) => {
+		const primaryId = call.metaData.primaryUserId;
+		if (!primaryId) return false;
+		const primary = call.parties?.find((p) => p.userId === primaryId);
+		if (!primary?.emailAddress) return false;
+		return emailSet.has(primary.emailAddress.toLowerCase());
+	});
+}
+
+/**
  * Filter calls to those where any participant has a matching email address.
  * Comparison is case-insensitive.
  */
@@ -440,6 +459,7 @@ export class GongClient {
 		primaryUserIds?: string[];
 		callIds?: string[];
 		include?: string[];
+		primaryUserEmails?: string[];
 		participantUserIds?: string[];
 		participantEmails?: string[];
 		customerName?: string;
@@ -484,6 +504,12 @@ export class GongClient {
 
 		// Apply client-side filters
 		let filtered = allCalls;
+		if (options.primaryUserEmails && options.primaryUserEmails.length > 0) {
+			filtered = filterByPrimaryUserEmails(
+				filtered,
+				options.primaryUserEmails,
+			);
+		}
 		if (options.participantUserIds && options.participantUserIds.length > 0) {
 			filtered = filterByParticipantUserIds(
 				filtered,
