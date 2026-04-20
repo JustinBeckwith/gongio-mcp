@@ -351,6 +351,34 @@ describe('GongClient', () => {
 			expect(cs.exposedFields.interaction.speakers).toBe(true);
 			expect(cs.context).toBe('Extended');
 		});
+
+		it('returns empty response on 404 "No calls found"', async () => {
+			fetchMock.mockResolvedValueOnce({
+				ok: false,
+				status: 404,
+				statusText: 'Not Found',
+				text: async () =>
+					'{"requestId":"x","errors":["No calls found corresponding to the provided filters"]}',
+			});
+
+			const result = await client.searchCalls({});
+			expect(result.calls).toHaveLength(0);
+			expect(result.records.totalRecords).toBe(0);
+		});
+
+		it('propagates real errors (400)', async () => {
+			fetchMock.mockResolvedValueOnce({
+				ok: false,
+				status: 400,
+				statusText: 'Bad Request',
+				text: async () =>
+					'{"requestId":"x","errors":["Json parse error"]}',
+			});
+
+			await expect(client.searchCalls({})).rejects.toThrow(
+				/400.*Json parse error/,
+			);
+		});
 	});
 
 	describe('getCall', () => {

@@ -93,6 +93,17 @@ export function buildContentSelector(
 export const MAX_SEARCH_PAGES = 50;
 
 /**
+ * Detect Gong's "no results" 404 so callers can return an empty response
+ * instead of surfacing it as an error.
+ */
+function isNoCallsFoundError(message: string): boolean {
+	return (
+		message.includes('404') &&
+		message.includes('No calls found corresponding to the provided filters')
+	);
+}
+
+/**
  * Filter calls to those where any participant has a matching userId.
  */
 export function filterByParticipantUserIds(
@@ -373,8 +384,30 @@ export class GongClient {
 			body.cursor = options.cursor;
 		}
 
-		const response = await this.request('POST', '/calls/extensive', body);
-		return parseCallDetailsResponse(response);
+		try {
+			const response = await this.request(
+				'POST',
+				'/calls/extensive',
+				body,
+			);
+			return parseCallDetailsResponse(response);
+		} catch (err) {
+			// Gong's calls/extensive returns 404 with "No calls found corresponding
+			// to the provided filters" when the filters match zero calls. Translate
+			// that to an empty response so callers don't have to special-case it.
+			if (err instanceof Error && isNoCallsFoundError(err.message)) {
+				return {
+					requestId: '',
+					records: {
+						totalRecords: 0,
+						currentPageSize: 0,
+						currentPageNumber: 0,
+					},
+					calls: [],
+				};
+			}
+			throw err;
+		}
 	}
 
 	/**
