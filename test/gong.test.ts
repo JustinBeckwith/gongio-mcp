@@ -3,6 +3,7 @@ import {
 	GongClient,
 	buildContentSelector,
 	filterByCustomerName,
+	filterByExcludeParticipantUserIds,
 	filterByMinDuration,
 	filterByParticipantEmails,
 	filterByParticipantUserIds,
@@ -1370,5 +1371,49 @@ describe('filterByMinDuration', () => {
 	it('handles zero minimum', () => {
 		const result = filterByMinDuration(calls, 0);
 		expect(result).toHaveLength(3);
+	});
+});
+
+describe('filterByExcludeParticipantUserIds', () => {
+	const calls: CallDetails[] = [
+		{
+			metaData: { id: '1', title: 'With Alice' },
+			parties: [
+				{ userId: '100', name: 'Alice' },
+				{ userId: '200', name: 'Bob' },
+			],
+		},
+		{
+			metaData: { id: '2', title: 'Without Alice' },
+			parties: [
+				{ userId: '300', name: 'Charlie' },
+				{ userId: '200', name: 'Bob' },
+			],
+		},
+		{
+			metaData: { id: '3', title: 'No parties' },
+		},
+	];
+
+	it('removes calls where excluded user is a participant', () => {
+		const result = filterByExcludeParticipantUserIds(calls, ['100']);
+		expect(result.every((c) => c.metaData.id !== '1')).toBe(true);
+	});
+
+	it('keeps calls that do not include the excluded user', () => {
+		const result = filterByExcludeParticipantUserIds(calls, ['100']);
+		expect(result.some((c) => c.metaData.id === '2')).toBe(true);
+	});
+
+	it('keeps calls with null parties (no excluded participant to match)', () => {
+		const result = filterByExcludeParticipantUserIds(calls, ['100']);
+		expect(result.some((c) => c.metaData.id === '3')).toBe(true);
+	});
+
+	it('handles multiple excluded IDs', () => {
+		const result = filterByExcludeParticipantUserIds(calls, ['100', '300']);
+		// Excludes call 1 (Alice) and call 2 (Charlie); only call 3 remains
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('3');
 	});
 });

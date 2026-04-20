@@ -136,6 +136,21 @@ export function filterByPrimaryUserEmails(
 }
 
 /**
+ * Filter out calls where any participant has a userId in the excluded set.
+ * Calls with no parties are kept (no excluded participant, so no match).
+ */
+export function filterByExcludeParticipantUserIds(
+	calls: CallDetails[],
+	userIds: string[],
+): CallDetails[] {
+	const idSet = new Set(userIds);
+	return calls.filter(
+		(call) =>
+			!call.parties?.some((p) => p.userId && idSet.has(p.userId)),
+	);
+}
+
+/**
  * Filter calls to those where any participant has a matching email address.
  * Comparison is case-insensitive.
  */
@@ -487,6 +502,7 @@ export class GongClient {
 		include?: string[];
 		primaryUserEmails?: string[];
 		participantUserIds?: string[];
+		excludeParticipantUserIds?: string[];
 		participantEmails?: string[];
 		customerName?: string;
 		trackers?: string[];
@@ -542,6 +558,15 @@ export class GongClient {
 			filtered = filterByParticipantUserIds(
 				filtered,
 				options.participantUserIds,
+			);
+		}
+		if (
+			options.excludeParticipantUserIds &&
+			options.excludeParticipantUserIds.length > 0
+		) {
+			filtered = filterByExcludeParticipantUserIds(
+				filtered,
+				options.excludeParticipantUserIds,
 			);
 		}
 		if (options.participantEmails && options.participantEmails.length > 0) {
