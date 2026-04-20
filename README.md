@@ -237,7 +237,22 @@ Search calls with advanced filters including participant lookup, customer name s
 | `participantEmails` | No | Array of email addresses — matches any participant (case-insensitive) |
 | `customerName` | No | Customer/account name — fuzzy matches CRM account name, external email domains, and call titles |
 | `callIds` | No | Array of specific call IDs to retrieve |
-| `include` | No | Additional data to return: `keyPoints`, `trackers`, `highlights`, `speakers`, `comments`, `context`, `outline`, `media` |
+| `include` | No | Additional data to return — see table below |
+
+**`include` options:**
+
+| Value | What it adds | Size |
+|-------|-------------|------|
+| `keyPoints` | AI-extracted key points as bullets | ~5KB/call |
+| `trackers` | Keyword/smart tracker hits with counts | ~3KB/call |
+| `highlights` | AI-curated highlight clips grouped by theme | ~3KB/call |
+| `speakers` | Talk time per participant | ~1KB/call |
+| `comments` | Public comments left on the call | varies |
+| `context` | CRM account/opportunity linkage (HubSpot, Salesforce) | ~1KB/call |
+| `outline` | Full section-by-section outline with items | **~80KB/call (large)** |
+| `media` | Audio/video URLs (valid 8 hours) | ~3KB/call |
+
+Defaults (always returned): participants, brief summary, and topics — ~3KB per call.
 
 **Notes:**
 - `participantUserIds` and `participantEmails` find calls where the user was _any_ participant, not just the host. This requires fetching calls by date range and filtering client-side, so providing a date range is recommended for performance.
