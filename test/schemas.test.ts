@@ -291,6 +291,87 @@ describe('searchCallsRequestSchema', () => {
 		});
 		expect(result.success).toBe(false);
 	});
+
+	it('accepts valid maxDuration', () => {
+		const result = searchCallsRequestSchema.safeParse({ maxDuration: 3600 });
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects negative maxDuration', () => {
+		const result = searchCallsRequestSchema.safeParse({ maxDuration: -1 });
+		expect(result.success).toBe(false);
+	});
+
+	it('accepts valid direction values', () => {
+		for (const d of ['Inbound', 'Outbound', 'Conference', 'Unknown']) {
+			const result = searchCallsRequestSchema.safeParse({ direction: d });
+			expect(result.success).toBe(true);
+		}
+	});
+
+	it('rejects invalid direction', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			direction: 'Sideways',
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('accepts valid system string', () => {
+		const result = searchCallsRequestSchema.safeParse({ system: 'Zoom' });
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects empty system', () => {
+		const result = searchCallsRequestSchema.safeParse({ system: '' });
+		expect(result.success).toBe(false);
+	});
+
+	it('accepts valid language code', () => {
+		const result = searchCallsRequestSchema.safeParse({ language: 'eng' });
+		expect(result.success).toBe(true);
+	});
+
+	it('accepts valid titleContains', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			titleContains: 'kickoff',
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects empty titleContains', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			titleContains: '',
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('accepts valid excludeParticipantEmails', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			excludeParticipantEmails: ['exclude@example.com'],
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects invalid excludeParticipantEmails', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			excludeParticipantEmails: ['not-an-email'],
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('accepts valid excludePrimaryUserIds', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			excludePrimaryUserIds: ['111'],
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects invalid excludePrimaryUserIds format', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			excludePrimaryUserIds: ['abc'],
+		});
+		expect(result.success).toBe(false);
+	});
 });
 
 describe('getCallSummaryRequestSchema', () => {

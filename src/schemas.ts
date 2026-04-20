@@ -89,14 +89,23 @@ export const searchCallsRequestSchema = z
 		workspaceId: gongIdSchema.optional(),
 		primaryUserIds: z.array(gongIdSchema).optional(),
 		primaryUserEmails: z.array(z.string().email()).optional(),
+		excludePrimaryUserIds: z.array(gongIdSchema).optional(),
 		callIds: z.array(gongIdSchema).optional(),
 		participantUserIds: z.array(gongIdSchema).optional(),
 		excludeParticipantUserIds: z.array(gongIdSchema).optional(),
 		participantEmails: z.array(z.string().email()).optional(),
+		excludeParticipantEmails: z.array(z.string().email()).optional(),
 		customerName: z.string().min(1).optional(),
+		titleContains: z.string().min(1).optional(),
 		trackers: z.array(z.string().min(1)).optional(),
 		scope: z.enum(['Internal', 'External', 'Unknown']).optional(),
+		direction: z
+			.enum(['Inbound', 'Outbound', 'Conference', 'Unknown'])
+			.optional(),
+		system: z.string().min(1).optional(),
+		language: z.string().min(1).optional(),
 		minDuration: z.number().int().min(0).optional(),
+		maxDuration: z.number().int().min(0).optional(),
 		include: z.array(searchCallsIncludeSchema).optional(),
 	})
 	.refine(
