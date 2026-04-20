@@ -181,7 +181,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 			{
 				name: 'search_calls',
 				description:
-					'Search for Gong calls with filters including date range, primary users (hosts), participant users or emails, customer/account name, and specific call IDs. Returns all matching calls with participant info, brief summary, and topics by default. Use the include parameter to request additional data like key points, trackers, or highlights.',
+					'Search for Gong calls with a wide range of filters: date range, host, participant (user ID or email), customer/account, tracker mentions, scope, direction, system, language, title, and duration. Most filters have a matching exclude variant. Returns participant info, brief summary, and topics by default; use include to request additional data (key points, trackers, highlights, etc.).',
 				inputSchema: {
 					type: 'object',
 					properties: {
@@ -214,10 +214,37 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 								pattern: '^\\d{1,20}$',
 							},
 						},
+						primaryUserEmails: {
+							type: 'array',
+							description:
+								'Filter by host email (case-insensitive). Alternative to primaryUserIds when you have emails instead of user IDs.',
+							items: {
+								type: 'string',
+								format: 'email',
+							},
+						},
+						excludePrimaryUserIds: {
+							type: 'array',
+							description:
+								'Exclude calls hosted by these user IDs.',
+							items: {
+								type: 'string',
+								pattern: '^\\d{1,20}$',
+							},
+						},
 						participantUserIds: {
 							type: 'array',
 							description:
 								'Filter by participant user IDs. Matches calls where any participant (host, attendee, or invitee) has a matching Gong user ID. Requires a date range for optimal performance.',
+							items: {
+								type: 'string',
+								pattern: '^\\d{1,20}$',
+							},
+						},
+						excludeParticipantUserIds: {
+							type: 'array',
+							description:
+								'Exclude calls where any participant has a matching user ID.',
 							items: {
 								type: 'string',
 								pattern: '^\\d{1,20}$',
@@ -232,11 +259,71 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 								format: 'email',
 							},
 						},
+						excludeParticipantEmails: {
+							type: 'array',
+							description:
+								'Exclude calls where any participant has a matching email (case-insensitive).',
+							items: {
+								type: 'string',
+								format: 'email',
+							},
+						},
 						customerName: {
 							type: 'string',
 							description:
 								'Filter by customer/account name (case-insensitive substring match). Searches CRM account name, external participant email domains, and call titles.',
 							minLength: 1,
+						},
+						titleContains: {
+							type: 'string',
+							description:
+								'Filter calls whose title contains this substring (case-insensitive).',
+							minLength: 1,
+						},
+						trackers: {
+							type: 'array',
+							description:
+								'Filter calls where at least one matching tracker fired (count > 0). Tracker names are matched case-insensitive substring and vary by workspace — call get_trackers first to discover what is configured.',
+							items: {
+								type: 'string',
+								minLength: 1,
+							},
+						},
+						scope: {
+							type: 'string',
+							description:
+								'Filter by call scope: External (customer-facing), Internal (team), or Unknown.',
+							enum: ['External', 'Internal', 'Unknown'],
+						},
+						direction: {
+							type: 'string',
+							description:
+								'Filter by call direction: Inbound, Outbound, Conference, or Unknown.',
+							enum: ['Inbound', 'Outbound', 'Conference', 'Unknown'],
+						},
+						system: {
+							type: 'string',
+							description:
+								'Filter by conferencing system (e.g., "Zoom", "Google Meet"). Case-insensitive substring match.',
+							minLength: 1,
+						},
+						language: {
+							type: 'string',
+							description:
+								'Filter by language code (e.g., "eng", "jpn"). Case-insensitive exact match.',
+							minLength: 1,
+						},
+						minDuration: {
+							type: 'integer',
+							description:
+								'Minimum call duration in seconds. Useful for filtering out no-shows or misfired meetings.',
+							minimum: 0,
+						},
+						maxDuration: {
+							type: 'integer',
+							description:
+								'Maximum call duration in seconds.',
+							minimum: 0,
 						},
 						callIds: {
 							type: 'array',
