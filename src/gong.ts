@@ -133,6 +133,25 @@ export function filterByParticipantEmails(
 }
 
 /**
+ * Filter calls to those where at least one named tracker fired (count > 0).
+ * Matches tracker names by case-insensitive substring. A call is included
+ * when any requested name matches any tracker with a non-zero count.
+ */
+export function filterByTrackers(
+	calls: CallDetails[],
+	trackerNames: string[],
+): CallDetails[] {
+	const needles = trackerNames.map((n) => n.toLowerCase());
+	return calls.filter((call) =>
+		call.content?.trackers?.some(
+			(t) =>
+				t.count > 0 &&
+				needles.some((needle) => t.name.toLowerCase().includes(needle)),
+		),
+	);
+}
+
+/**
  * Filter calls by customer/account name.
  * Case-insensitive substring match against:
  * 1. CRM context Account Name fields
@@ -424,11 +443,18 @@ export class GongClient {
 		participantUserIds?: string[];
 		participantEmails?: string[];
 		customerName?: string;
+		trackers?: string[];
 	}): Promise<{ response: CallDetailsResponse; totalBeforeFilter: number }> {
 		const allCalls: CallDetails[] = [];
 		let cursor: string | undefined;
 		let pageCount = 0;
 		let requestId = '';
+
+		// Auto-enable tracker content when filtering by trackers
+		const include =
+			options.trackers && options.trackers.length > 0
+				? Array.from(new Set([...(options.include ?? []), 'trackers']))
+				: options.include;
 
 		// Only pass server-side filter options to the API
 		const apiOptions = {
@@ -437,7 +463,7 @@ export class GongClient {
 			workspaceId: options.workspaceId,
 			primaryUserIds: options.primaryUserIds,
 			callIds: options.callIds,
-			include: options.include,
+			include,
 		};
 
 		do {
@@ -472,6 +498,9 @@ export class GongClient {
 		}
 		if (options.customerName) {
 			filtered = filterByCustomerName(filtered, options.customerName);
+		}
+		if (options.trackers && options.trackers.length > 0) {
+			filtered = filterByTrackers(filtered, options.trackers);
 		}
 
 		return {

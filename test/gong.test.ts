@@ -5,6 +5,7 @@ import {
 	filterByCustomerName,
 	filterByParticipantEmails,
 	filterByParticipantUserIds,
+	filterByTrackers,
 } from '../src/gong.js';
 import type {
 	CallDetails,
@@ -1109,5 +1110,126 @@ describe('filterByCustomerName', () => {
 		];
 		const result = filterByCustomerName(sparse, 'anything');
 		expect(result).toHaveLength(0);
+	});
+});
+
+describe('filterByTrackers', () => {
+	const calls: CallDetails[] = [
+		{
+			metaData: { id: '1', title: 'Call 1' },
+			content: {
+				trackers: [
+					{ id: 't1', name: 'Competitors', count: 3 },
+					{ id: 't2', name: 'Pricing', count: 0 },
+				],
+			},
+		},
+		{
+			metaData: { id: '2', title: 'Call 2' },
+			content: {
+				trackers: [{ id: 't3', name: 'Pain points (tracker)', count: 2 }],
+			},
+		},
+		{
+			metaData: { id: '3', title: 'Call 3' },
+			content: { trackers: [] },
+		},
+		{
+			metaData: { id: '4', title: 'Call 4' },
+		},
+	];
+
+	it('matches tracker name by case-insensitive substring', () => {
+		const result = filterByTrackers(calls, ['competitor']);
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('1');
+	});
+
+	it('requires count > 0', () => {
+		// Pricing exists on Call 1 but with count 0 — should not match
+		const result = filterByTrackers(calls, ['pricing']);
+		expect(result).toHaveLength(0);
+	});
+
+	it('matches any of multiple tracker names (OR)', () => {
+		const result = filterByTrackers(calls, ['competitor', 'pain']);
+		expect(result).toHaveLength(2);
+	});
+
+	it('returns empty when no match', () => {
+		const result = filterByTrackers(calls, ['nonexistent']);
+		expect(result).toHaveLength(0);
+	});
+
+	it('handles calls with no content or trackers', () => {
+		const result = filterByTrackers(calls, ['competitor']);
+		// Calls 3 and 4 have no/empty trackers — should be excluded
+		expect(result.every((c) => c.metaData.id === '1')).toBe(true);
+	});
+});
+
+describe('searchCallsAll with trackers filter', () => {
+	let client: GongClient;
+	let fetchMock: ReturnType<typeof vi.fn>;
+
+	beforeEach(() => {
+		fetchMock = vi.fn();
+		global.fetch = fetchMock;
+		client = new GongClient({
+			accessKey: 'test-key',
+			accessKeySecret: 'test-secret',
+		});
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('auto-enables trackers in contentSelector when trackers filter is set', async () => {
+		const mockResponse: CallDetailsResponse = {
+			requestId: 'test',
+			records: {
+				totalRecords: 0,
+				currentPageSize: 0,
+				currentPageNumber: 0,
+			},
+			calls: [],
+		};
+
+		fetchMock.mockResolvedValueOnce({
+			ok: true,
+			json: async () => mockResponse,
+		});
+
+		await client.searchCallsAll({ trackers: ['Competitors'] });
+
+		const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+		expect(body.contentSelector.exposedFields.content.trackers).toBe(true);
+	});
+
+	it('does not duplicate trackers in include when already present', async () => {
+		const mockResponse: CallDetailsResponse = {
+			requestId: 'test',
+			records: {
+				totalRecords: 0,
+				currentPageSize: 0,
+				currentPageNumber: 0,
+			},
+			calls: [],
+		};
+
+		fetchMock.mockResolvedValueOnce({
+			ok: true,
+			json: async () => mockResponse,
+		});
+
+		await client.searchCallsAll({
+			trackers: ['Competitors'],
+			include: ['trackers', 'keyPoints'],
+		});
+
+		const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+		expect(body.contentSelector.exposedFields.content.trackers).toBe(true);
+		expect(body.contentSelector.exposedFields.content.keyPoints).toBe(true);
 	});
 });
