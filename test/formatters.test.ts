@@ -397,7 +397,7 @@ describe('formatCallDetailsResponse', () => {
 		expect(result).toContain('- Demo scheduled for next week');
 	});
 
-	it('renders trackers when present', () => {
+	it('renders only non-zero trackers when no filter is provided', () => {
 		const response: CallDetailsResponse = {
 			requestId: 'test-123',
 			records: {
@@ -413,6 +413,8 @@ describe('formatCallDetailsResponse', () => {
 						trackers: [
 							{ id: '1', name: 'Pricing', count: 3 },
 							{ id: '2', name: 'Competitor', count: 1 },
+							{ id: '3', name: 'Budget', count: 0 },
+							{ id: '4', name: 'Champion', count: 0 },
 						],
 					},
 				},
@@ -421,6 +423,67 @@ describe('formatCallDetailsResponse', () => {
 
 		const result = formatCallDetailsResponse(response);
 		expect(result).toContain('**Trackers:** Pricing (3x), Competitor (1x)');
+		expect(result).not.toContain('Budget');
+		expect(result).not.toContain('Champion');
+	});
+
+	it('renders only trackers matching the trackerFilter', () => {
+		const response: CallDetailsResponse = {
+			requestId: 'test-123',
+			records: {
+				totalRecords: 1,
+				currentPageSize: 1,
+				currentPageNumber: 0,
+			},
+			calls: [
+				{
+					metaData: { id: '123', title: 'Sales Call' },
+					parties: [{ name: 'Alice' }],
+					content: {
+						trackers: [
+							{ id: '1', name: 'Pricing', count: 3 },
+							{ id: '2', name: 'Competitors', count: 5 },
+							{ id: '3', name: 'Competitor Mentions', count: 2 },
+							{ id: '4', name: 'Pain points', count: 4 },
+						],
+					},
+				},
+			],
+		};
+
+		const result = formatCallDetailsResponse(response, undefined, [
+			'competitor',
+		]);
+		expect(result).toContain('Competitors (5x)');
+		expect(result).toContain('Competitor Mentions (2x)');
+		expect(result).not.toContain('Pricing');
+		expect(result).not.toContain('Pain points');
+	});
+
+	it('omits Trackers line entirely when no trackers fired', () => {
+		const response: CallDetailsResponse = {
+			requestId: 'test-123',
+			records: {
+				totalRecords: 1,
+				currentPageSize: 1,
+				currentPageNumber: 0,
+			},
+			calls: [
+				{
+					metaData: { id: '123', title: 'Quiet Call' },
+					parties: [{ name: 'Alice' }],
+					content: {
+						trackers: [
+							{ id: '1', name: 'Pricing', count: 0 },
+							{ id: '2', name: 'Competitor', count: 0 },
+						],
+					},
+				},
+			],
+		};
+
+		const result = formatCallDetailsResponse(response);
+		expect(result).not.toContain('**Trackers:**');
 	});
 });
 

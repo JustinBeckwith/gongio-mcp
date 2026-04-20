@@ -753,6 +753,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 							text: formatCallDetailsResponse(
 								response,
 								totalBeforeFilter,
+								validated.trackers,
 							),
 						},
 					],

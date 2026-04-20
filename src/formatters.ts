@@ -100,10 +100,16 @@ function extractAccountName(call: CallDetails): string | null {
  * Format call details response with adaptive output.
  * Uses rich per-call blocks when content data is present,
  * falls back to a compact table for metadata-only results.
+ *
+ * trackerFilter, when provided, limits the Trackers line to only
+ * trackers whose name matches one of the supplied needles
+ * (case-insensitive substring). Without a filter, all non-zero
+ * trackers are shown.
  */
 export function formatCallDetailsResponse(
 	response: CallDetailsResponse,
 	totalBeforeFilter?: number,
+	trackerFilter?: string[],
 ): string {
 	const lines: string[] = [];
 
@@ -126,7 +132,7 @@ export function formatCallDetailsResponse(
 	// Use rich format when content data is available
 	if (hasRichContent(response.calls)) {
 		for (const call of response.calls) {
-			lines.push(formatCallDetailsBlock(call));
+			lines.push(formatCallDetailsBlock(call, trackerFilter));
 			lines.push('');
 		}
 	} else {
@@ -155,7 +161,10 @@ export function formatCallDetailsResponse(
 /**
  * Format a single call as a rich block for search results.
  */
-function formatCallDetailsBlock(call: CallDetails): string {
+function formatCallDetailsBlock(
+	call: CallDetails,
+	trackerFilter?: string[],
+): string {
 	const lines: string[] = [];
 	const meta = call.metaData;
 
@@ -219,12 +228,22 @@ function formatCallDetailsBlock(call: CallDetails): string {
 		}
 	}
 
-	// Trackers (optional, compact)
+	// Trackers (optional, compact). Filter to relevance:
+	// - if trackerFilter is supplied, show only matching trackers (substring, case-insensitive)
+	// - otherwise show only trackers with count > 0 (drop the noisy 0x entries)
 	if (call.content?.trackers && call.content.trackers.length > 0) {
-		const trackers = call.content.trackers
-			.map((t) => `${escapeMarkdown(t.name)} (${t.count}x)`)
-			.join(', ');
-		lines.push(`**Trackers:** ${trackers}`);
+		const needles = trackerFilter?.map((n) => n.toLowerCase());
+		const visible = call.content.trackers.filter((t) => {
+			if (t.count <= 0) return false;
+			if (!needles || needles.length === 0) return true;
+			return needles.some((needle) => t.name.toLowerCase().includes(needle));
+		});
+		if (visible.length > 0) {
+			const trackers = visible
+				.map((t) => `${escapeMarkdown(t.name)} (${t.count}x)`)
+				.join(', ');
+			lines.push(`**Trackers:** ${trackers}`);
+		}
 	}
 
 	// Highlights (optional)
