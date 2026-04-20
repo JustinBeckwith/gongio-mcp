@@ -215,6 +215,82 @@ describe('searchCallsRequestSchema', () => {
 		});
 		expect(result.success).toBe(false);
 	});
+
+	it('accepts valid trackers array', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			trackers: ['Competitors', 'Pricing'],
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects empty tracker name', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			trackers: [''],
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('accepts valid primaryUserEmails', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			primaryUserEmails: ['host@example.com'],
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects invalid primaryUserEmails', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			primaryUserEmails: ['not-an-email'],
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('accepts valid scope values', () => {
+		for (const scope of ['Internal', 'External', 'Unknown']) {
+			const result = searchCallsRequestSchema.safeParse({ scope });
+			expect(result.success).toBe(true);
+		}
+	});
+
+	it('rejects invalid scope', () => {
+		const result = searchCallsRequestSchema.safeParse({ scope: 'Public' });
+		expect(result.success).toBe(false);
+	});
+
+	it('accepts non-negative minDuration', () => {
+		const result = searchCallsRequestSchema.safeParse({ minDuration: 600 });
+		expect(result.success).toBe(true);
+	});
+
+	it('accepts zero minDuration', () => {
+		const result = searchCallsRequestSchema.safeParse({ minDuration: 0 });
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects negative minDuration', () => {
+		const result = searchCallsRequestSchema.safeParse({ minDuration: -1 });
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects non-integer minDuration', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			minDuration: 1.5,
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('accepts valid excludeParticipantUserIds', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			excludeParticipantUserIds: ['111', '222'],
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects invalid excludeParticipantUserIds format', () => {
+		const result = searchCallsRequestSchema.safeParse({
+			excludeParticipantUserIds: ['abc'],
+		});
+		expect(result.success).toBe(false);
+	});
 });
 
 describe('getCallSummaryRequestSchema', () => {

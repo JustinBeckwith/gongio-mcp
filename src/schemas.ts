@@ -88,10 +88,15 @@ export const searchCallsRequestSchema = z
 		toDateTime: iso8601DateTimeSchema.optional(),
 		workspaceId: gongIdSchema.optional(),
 		primaryUserIds: z.array(gongIdSchema).optional(),
+		primaryUserEmails: z.array(z.string().email()).optional(),
 		callIds: z.array(gongIdSchema).optional(),
 		participantUserIds: z.array(gongIdSchema).optional(),
+		excludeParticipantUserIds: z.array(gongIdSchema).optional(),
 		participantEmails: z.array(z.string().email()).optional(),
 		customerName: z.string().min(1).optional(),
+		trackers: z.array(z.string().min(1)).optional(),
+		scope: z.enum(['Internal', 'External', 'Unknown']).optional(),
+		minDuration: z.number().int().min(0).optional(),
 		include: z.array(searchCallsIncludeSchema).optional(),
 	})
 	.refine(

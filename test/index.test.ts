@@ -39,10 +39,15 @@ describe('MCP Server - search_calls tool', () => {
 				toDateTime: '2024-01-31T23:59:59Z',
 				workspaceId: '999',
 				primaryUserIds: ['111', '222'],
+				primaryUserEmails: ['host@example.com'],
 				callIds: ['123', '456'],
 				participantUserIds: ['333', '444'],
+				excludeParticipantUserIds: ['555'],
 				participantEmails: ['user@example.com'],
 				customerName: 'Acme',
+				trackers: ['Competitors'],
+				scope: 'External',
+				minDuration: 600,
 				include: ['keyPoints', 'trackers'],
 			});
 			expect(result.success).toBe(true);
