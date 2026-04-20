@@ -4,7 +4,9 @@ import {
 	buildContentSelector,
 	filterByCustomerName,
 	filterByDirection,
+	filterByExcludeParticipantEmails,
 	filterByExcludeParticipantUserIds,
+	filterByExcludePrimaryUserIds,
 	filterByLanguage,
 	filterByMaxDuration,
 	filterByMinDuration,
@@ -1533,5 +1535,75 @@ describe('filterByTitleContains', () => {
 	it('excludes calls with null title', () => {
 		const result = filterByTitleContains(calls, 'anything');
 		expect(result.every((c) => c.metaData.id !== '3')).toBe(true);
+	});
+});
+
+describe('filterByExcludeParticipantEmails', () => {
+	const calls: CallDetails[] = [
+		{
+			metaData: { id: '1', title: 'With Alice' },
+			parties: [
+				{ emailAddress: 'alice@example.com', name: 'Alice' },
+				{ emailAddress: 'bob@example.com', name: 'Bob' },
+			],
+		},
+		{
+			metaData: { id: '2', title: 'Without Alice' },
+			parties: [{ emailAddress: 'bob@example.com', name: 'Bob' }],
+		},
+		{
+			metaData: { id: '3', title: 'No parties' },
+		},
+	];
+
+	it('removes calls where excluded email is a participant', () => {
+		const result = filterByExcludeParticipantEmails(calls, [
+			'alice@example.com',
+		]);
+		expect(result.every((c) => c.metaData.id !== '1')).toBe(true);
+	});
+
+	it('matches case-insensitively', () => {
+		const result = filterByExcludeParticipantEmails(calls, [
+			'ALICE@EXAMPLE.COM',
+		]);
+		expect(result.every((c) => c.metaData.id !== '1')).toBe(true);
+	});
+
+	it('keeps calls that do not include the excluded email', () => {
+		const result = filterByExcludeParticipantEmails(calls, [
+			'alice@example.com',
+		]);
+		expect(result.some((c) => c.metaData.id === '2')).toBe(true);
+	});
+
+	it('keeps calls with null parties', () => {
+		const result = filterByExcludeParticipantEmails(calls, [
+			'alice@example.com',
+		]);
+		expect(result.some((c) => c.metaData.id === '3')).toBe(true);
+	});
+});
+
+describe('filterByExcludePrimaryUserIds', () => {
+	const calls: CallDetails[] = [
+		{ metaData: { id: '1', title: 'Hosted by 100', primaryUserId: '100' } },
+		{ metaData: { id: '2', title: 'Hosted by 200', primaryUserId: '200' } },
+		{ metaData: { id: '3', title: 'No primary user' } },
+	];
+
+	it('removes calls hosted by excluded user', () => {
+		const result = filterByExcludePrimaryUserIds(calls, ['100']);
+		expect(result.every((c) => c.metaData.id !== '1')).toBe(true);
+	});
+
+	it('keeps calls hosted by other users', () => {
+		const result = filterByExcludePrimaryUserIds(calls, ['100']);
+		expect(result.some((c) => c.metaData.id === '2')).toBe(true);
+	});
+
+	it('keeps calls without primaryUserId', () => {
+		const result = filterByExcludePrimaryUserIds(calls, ['100']);
+		expect(result.some((c) => c.metaData.id === '3')).toBe(true);
 	});
 });

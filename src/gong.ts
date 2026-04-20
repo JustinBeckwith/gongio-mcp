@@ -151,6 +151,40 @@ export function filterByExcludeParticipantUserIds(
 }
 
 /**
+ * Filter out calls where any participant has an email in the excluded set.
+ * Comparison is case-insensitive. Calls with no parties are kept.
+ */
+export function filterByExcludeParticipantEmails(
+	calls: CallDetails[],
+	emails: string[],
+): CallDetails[] {
+	const emailSet = new Set(emails.map((e) => e.toLowerCase()));
+	return calls.filter(
+		(call) =>
+			!call.parties?.some(
+				(p) =>
+					p.emailAddress &&
+					emailSet.has(p.emailAddress.toLowerCase()),
+			),
+	);
+}
+
+/**
+ * Filter out calls whose primaryUserId is in the excluded set.
+ * Calls with no primaryUserId are kept (nothing to match against).
+ */
+export function filterByExcludePrimaryUserIds(
+	calls: CallDetails[],
+	userIds: string[],
+): CallDetails[] {
+	const idSet = new Set(userIds);
+	return calls.filter((call) => {
+		const primaryId = call.metaData.primaryUserId;
+		return !primaryId || !idSet.has(primaryId);
+	});
+}
+
+/**
  * Filter calls to those where any participant has a matching email address.
  * Comparison is case-insensitive.
  */
@@ -629,6 +663,15 @@ export class GongClient {
 				options.primaryUserEmails,
 			);
 		}
+		if (
+			options.excludePrimaryUserIds &&
+			options.excludePrimaryUserIds.length > 0
+		) {
+			filtered = filterByExcludePrimaryUserIds(
+				filtered,
+				options.excludePrimaryUserIds,
+			);
+		}
 		if (options.participantUserIds && options.participantUserIds.length > 0) {
 			filtered = filterByParticipantUserIds(
 				filtered,
@@ -648,6 +691,15 @@ export class GongClient {
 			filtered = filterByParticipantEmails(
 				filtered,
 				options.participantEmails,
+			);
+		}
+		if (
+			options.excludeParticipantEmails &&
+			options.excludeParticipantEmails.length > 0
+		) {
+			filtered = filterByExcludeParticipantEmails(
+				filtered,
+				options.excludeParticipantEmails,
 			);
 		}
 		if (options.customerName) {
