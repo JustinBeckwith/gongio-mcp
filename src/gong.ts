@@ -193,6 +193,74 @@ export function filterByMinDuration(
 }
 
 /**
+ * Filter calls by maximum duration in seconds.
+ * Calls with null/missing duration are excluded.
+ */
+export function filterByMaxDuration(
+	calls: CallDetails[],
+	maxSeconds: number,
+): CallDetails[] {
+	return calls.filter(
+		(call) =>
+			typeof call.metaData.duration === 'number' &&
+			call.metaData.duration <= maxSeconds,
+	);
+}
+
+/**
+ * Filter calls by direction (Inbound, Outbound, Conference, Unknown).
+ * Calls with null/missing direction are excluded.
+ */
+export function filterByDirection(
+	calls: CallDetails[],
+	direction: string,
+): CallDetails[] {
+	return calls.filter((call) => call.metaData.direction === direction);
+}
+
+/**
+ * Filter calls by conferencing system (e.g., "Zoom", "Google Meet").
+ * Case-insensitive substring match. Calls with null/missing system excluded.
+ */
+export function filterBySystem(
+	calls: CallDetails[],
+	system: string,
+): CallDetails[] {
+	const needle = system.toLowerCase();
+	return calls.filter((call) =>
+		call.metaData.system?.toLowerCase().includes(needle),
+	);
+}
+
+/**
+ * Filter calls by language code (e.g., "eng", "jpn").
+ * Case-insensitive exact match. Calls with null/missing language excluded.
+ */
+export function filterByLanguage(
+	calls: CallDetails[],
+	language: string,
+): CallDetails[] {
+	const target = language.toLowerCase();
+	return calls.filter(
+		(call) => call.metaData.language?.toLowerCase() === target,
+	);
+}
+
+/**
+ * Filter calls whose title contains the given substring (case-insensitive).
+ * Calls with null/missing title are excluded.
+ */
+export function filterByTitleContains(
+	calls: CallDetails[],
+	needle: string,
+): CallDetails[] {
+	const target = needle.toLowerCase();
+	return calls.filter((call) =>
+		call.metaData.title?.toLowerCase().includes(target),
+	);
+}
+
+/**
  * Filter calls to those where at least one named tracker fired (count > 0).
  * Matches tracker names by case-insensitive substring. A call is included
  * when any requested name matches any tracker with a non-zero count.
@@ -501,13 +569,20 @@ export class GongClient {
 		callIds?: string[];
 		include?: string[];
 		primaryUserEmails?: string[];
+		excludePrimaryUserIds?: string[];
 		participantUserIds?: string[];
 		excludeParticipantUserIds?: string[];
 		participantEmails?: string[];
+		excludeParticipantEmails?: string[];
 		customerName?: string;
+		titleContains?: string;
 		trackers?: string[];
 		scope?: string;
+		direction?: string;
+		system?: string;
+		language?: string;
 		minDuration?: number;
+		maxDuration?: number;
 	}): Promise<{ response: CallDetailsResponse; totalBeforeFilter: number }> {
 		const allCalls: CallDetails[] = [];
 		let cursor: string | undefined;
@@ -584,8 +659,23 @@ export class GongClient {
 		if (options.scope) {
 			filtered = filterByScope(filtered, options.scope);
 		}
+		if (options.direction) {
+			filtered = filterByDirection(filtered, options.direction);
+		}
+		if (options.system) {
+			filtered = filterBySystem(filtered, options.system);
+		}
+		if (options.language) {
+			filtered = filterByLanguage(filtered, options.language);
+		}
+		if (options.titleContains) {
+			filtered = filterByTitleContains(filtered, options.titleContains);
+		}
 		if (typeof options.minDuration === 'number') {
 			filtered = filterByMinDuration(filtered, options.minDuration);
+		}
+		if (typeof options.maxDuration === 'number') {
+			filtered = filterByMaxDuration(filtered, options.maxDuration);
 		}
 
 		return {

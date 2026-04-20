@@ -3,12 +3,17 @@ import {
 	GongClient,
 	buildContentSelector,
 	filterByCustomerName,
+	filterByDirection,
 	filterByExcludeParticipantUserIds,
+	filterByLanguage,
+	filterByMaxDuration,
 	filterByMinDuration,
 	filterByParticipantEmails,
 	filterByParticipantUserIds,
 	filterByPrimaryUserEmails,
 	filterByScope,
+	filterBySystem,
+	filterByTitleContains,
 	filterByTrackers,
 } from '../src/gong.js';
 import type {
@@ -1415,5 +1420,118 @@ describe('filterByExcludeParticipantUserIds', () => {
 		// Excludes call 1 (Alice) and call 2 (Charlie); only call 3 remains
 		expect(result).toHaveLength(1);
 		expect(result[0].metaData.id).toBe('3');
+	});
+});
+
+describe('filterByMaxDuration', () => {
+	const calls: CallDetails[] = [
+		{ metaData: { id: '1', title: 'Short', duration: 120 } },
+		{ metaData: { id: '2', title: 'Medium', duration: 600 } },
+		{ metaData: { id: '3', title: 'Long', duration: 3600 } },
+		{ metaData: { id: '4', title: 'No duration' } },
+	];
+
+	it('includes calls at or under the maximum', () => {
+		const result = filterByMaxDuration(calls, 600);
+		expect(result.map((c) => c.metaData.id).sort()).toEqual(['1', '2']);
+	});
+
+	it('excludes calls with null duration', () => {
+		const result = filterByMaxDuration(calls, 9999);
+		expect(result.every((c) => c.metaData.id !== '4')).toBe(true);
+	});
+});
+
+describe('filterByDirection', () => {
+	const calls: CallDetails[] = [
+		{ metaData: { id: '1', title: 'a', direction: 'Inbound' } },
+		{ metaData: { id: '2', title: 'b', direction: 'Outbound' } },
+		{ metaData: { id: '3', title: 'c', direction: 'Conference' } },
+		{ metaData: { id: '4', title: 'd' } },
+	];
+
+	it('matches direction exactly', () => {
+		const result = filterByDirection(calls, 'Outbound');
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('2');
+	});
+
+	it('excludes calls with null direction', () => {
+		const result = filterByDirection(calls, 'Inbound');
+		expect(result.every((c) => c.metaData.id !== '4')).toBe(true);
+	});
+});
+
+describe('filterBySystem', () => {
+	const calls: CallDetails[] = [
+		{ metaData: { id: '1', title: 'a', system: 'Zoom' } },
+		{ metaData: { id: '2', title: 'b', system: 'Google Meet' } },
+		{ metaData: { id: '3', title: 'c', system: 'Microsoft Teams' } },
+		{ metaData: { id: '4', title: 'd' } },
+	];
+
+	it('matches case-insensitive substring', () => {
+		const result = filterBySystem(calls, 'zoom');
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('1');
+	});
+
+	it('matches multi-word system by partial', () => {
+		const result = filterBySystem(calls, 'Meet');
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('2');
+	});
+
+	it('excludes calls with null system', () => {
+		const result = filterBySystem(calls, 'zoom');
+		expect(result.every((c) => c.metaData.id !== '4')).toBe(true);
+	});
+});
+
+describe('filterByLanguage', () => {
+	const calls: CallDetails[] = [
+		{ metaData: { id: '1', title: 'a', language: 'eng' } },
+		{ metaData: { id: '2', title: 'b', language: 'jpn' } },
+		{ metaData: { id: '3', title: 'c' } },
+	];
+
+	it('matches case-insensitive exact code', () => {
+		const result = filterByLanguage(calls, 'ENG');
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('1');
+	});
+
+	it('does not match partial codes', () => {
+		const result = filterByLanguage(calls, 'en');
+		expect(result).toHaveLength(0);
+	});
+
+	it('excludes calls with null language', () => {
+		const result = filterByLanguage(calls, 'eng');
+		expect(result.every((c) => c.metaData.id !== '3')).toBe(true);
+	});
+});
+
+describe('filterByTitleContains', () => {
+	const calls: CallDetails[] = [
+		{ metaData: { id: '1', title: 'Kickoff with Customer' } },
+		{ metaData: { id: '2', title: 'Weekly Review' } },
+		{ metaData: { id: '3', title: null } },
+	];
+
+	it('matches case-insensitive substring', () => {
+		const result = filterByTitleContains(calls, 'kickoff');
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('1');
+	});
+
+	it('returns empty when no match', () => {
+		const result = filterByTitleContains(calls, 'nonexistent');
+		expect(result).toHaveLength(0);
+	});
+
+	it('excludes calls with null title', () => {
+		const result = filterByTitleContains(calls, 'anything');
+		expect(result.every((c) => c.metaData.id !== '3')).toBe(true);
 	});
 });
