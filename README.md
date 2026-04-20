@@ -15,7 +15,7 @@ An MCP (Model Context Protocol) server that provides access to your Gong.io data
 | [`get_call`](#get_call) | Get metadata for a specific call |
 | [`get_call_summary`](#get_call_summary) | AI summary: key points, topics, action items |
 | [`get_call_transcript`](#get_call_transcript) | Full speaker-attributed transcript (paginated) |
-| [`search_calls`](#search_calls) | Advanced call search by participant, customer, host, date range |
+| [`search_calls`](#search_calls) | Rich call search — participant, customer, tracker, scope, duration, title, and more |
 | [`search_calls_by_account`](#search_calls_by_account) | Find calls involving a specific account/company by email domain |
 | [`search_calls_by_opportunity`](#search_calls_by_opportunity) | Find calls linked to specific CRM Opportunities |
 | [`search_transcripts`](#search_transcripts) | Free-text keyword search across transcript sentences |
@@ -26,6 +26,29 @@ An MCP (Model Context Protocol) server that provides access to your Gong.io data
 | [`get_user`](#get_user) | Get a specific user's profile |
 | [`search_users`](#search_users) | Search/filter users by IDs or creation date |
 | [`list_users`](#list_users) | List all workspace users |
+
+
+## Response Size & Context Limits
+
+`search_calls` can return a lot of data. Under the hood it:
+
+- Auto-paginates up to **~5000 calls** (50 API pages) per query
+- Applies client-side filters (participant, customer, tracker, duration, etc.) after pagination
+- Returns a rich per-call format (metadata + summary + topics + participants) by default
+
+**Guardrails built in:**
+
+- If the formatted output would exceed **`MAX_MCP_OUTPUT_LENGTH`** (default `50000` chars, configurable via env var), the tool **automatically falls back to a compact table** with a warning. You still get every call ID and title — drill in with `get_call_summary` on specific ones.
+- `include: ["outline"]` is **expensive** (~80KB per call). Avoid it in multi-call searches.
+- Tracker data is filtered to only show trackers matching your `trackers` filter (or non-zero trackers if no filter) — no more walls of `(0x)` noise.
+
+**If your query hits the output cap, narrow it:**
+
+1. Tighten `fromDateTime` / `toDateTime`
+2. Add `scope: "External"` or `scope: "Internal"`
+3. Add `minDuration: 600` to skip short no-shows
+4. Add `customerName` or `trackers` filter
+5. Drop heavy `include` options like `outline`
 
 ## Prerequisites
 
@@ -288,43 +311,15 @@ Search calls with advanced filters including participant lookup, customer name s
 
 Defaults (always returned): participants, brief summary, and topics — ~3KB per call.
 
-**Notes:**
-- Auto-paginates up to ~5000 calls (50 API pages). For larger result sets, narrow the date range or add filters.
-- Participant and customer filters run client-side after fetching. Provide a date range when possible — unbounded queries pull everything in the workspace.
-- `primaryUserIds` and `participantUserIds` compose: primary narrows the server query, participant post-filters the results.
-- `customerName` is a case-insensitive substring match checked against three sources: CRM account name, external participant email domains, and the call title.
-- **Tracker names vary by workspace.** Call `get_trackers` first to see what is configured before using the `trackers` filter.
-- When `trackers` filter is set, tracker content is automatically included in the response. The output also shows only the trackers you asked about (or only non-zero trackers when no filter is set), so you don't get drowned in `(0x)` entries for every workspace tracker.
-- When no filters match, the tool returns an empty result ("No calls found") rather than an error.
-- If the rich-format output would exceed `MAX_MCP_OUTPUT_LENGTH` (default 50000 chars), the tool falls back to the compact table with a warning. Override via the `MAX_MCP_OUTPUT_LENGTH` environment variable.
+**Filter behavior notes:**
 
-**Example workflows:**
+- Filters combine with **AND** logic. `primaryUserIds` + `participantUserIds` compose: primary narrows server-side, participant post-filters.
+- `customerName` matches any of: CRM account Name field, external participant email domain, or call title (case-insensitive substring).
+- `trackers` names are **workspace-specific** — call `get_trackers` first to see what's configured. Match is case-insensitive substring (so `"competitor"` matches both `"Competitors"` and `"Competitor Mentions"`).
+- When `trackers` filter is set, the relevant tracker content is auto-included and the output shows only the trackers you asked about. Without a filter, only non-zero trackers are shown.
+- An empty result returns `"No calls found"` rather than an error.
 
-```js
-// 1. Churn-risk scan: economic and objection signals on customer calls
-search_calls({
-  fromDateTime: "2026-01-01T00:00:00Z",
-  trackers: ["economic", "objection"],
-  scope: "External",
-  minDuration: 600
-})
-
-// 2. Competitive intel for a specific customer
-search_calls({
-  customerName: "Acme",
-  trackers: ["competitor"],
-  fromDateTime: "2026-01-01T00:00:00Z"
-})
-
-// 3. Coaching queue: rep's substantive external calls (excluding manager's)
-search_calls({
-  participantEmails: ["rep@example.com"],
-  excludeParticipantEmails: ["manager@example.com"],
-  scope: "External",
-  minDuration: 900,
-  fromDateTime: "2026-04-01T00:00:00Z"
-})
-```
+See [Response Size & Context Limits](#response-size--context-limits) for how large-result fallback works.
 
 </details>
 
