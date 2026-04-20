@@ -152,6 +152,32 @@ export function filterByParticipantEmails(
 }
 
 /**
+ * Filter calls by scope (Internal, External, Unknown).
+ * Calls with null/missing scope are excluded.
+ */
+export function filterByScope(
+	calls: CallDetails[],
+	scope: string,
+): CallDetails[] {
+	return calls.filter((call) => call.metaData.scope === scope);
+}
+
+/**
+ * Filter calls by minimum duration in seconds.
+ * Calls with null/missing duration are excluded.
+ */
+export function filterByMinDuration(
+	calls: CallDetails[],
+	minSeconds: number,
+): CallDetails[] {
+	return calls.filter(
+		(call) =>
+			typeof call.metaData.duration === 'number' &&
+			call.metaData.duration >= minSeconds,
+	);
+}
+
+/**
  * Filter calls to those where at least one named tracker fired (count > 0).
  * Matches tracker names by case-insensitive substring. A call is included
  * when any requested name matches any tracker with a non-zero count.
@@ -464,6 +490,8 @@ export class GongClient {
 		participantEmails?: string[];
 		customerName?: string;
 		trackers?: string[];
+		scope?: string;
+		minDuration?: number;
 	}): Promise<{ response: CallDetailsResponse; totalBeforeFilter: number }> {
 		const allCalls: CallDetails[] = [];
 		let cursor: string | undefined;
@@ -527,6 +555,12 @@ export class GongClient {
 		}
 		if (options.trackers && options.trackers.length > 0) {
 			filtered = filterByTrackers(filtered, options.trackers);
+		}
+		if (options.scope) {
+			filtered = filterByScope(filtered, options.scope);
+		}
+		if (typeof options.minDuration === 'number') {
+			filtered = filterByMinDuration(filtered, options.minDuration);
 		}
 
 		return {

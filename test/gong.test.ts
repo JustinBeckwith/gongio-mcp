@@ -3,9 +3,11 @@ import {
 	GongClient,
 	buildContentSelector,
 	filterByCustomerName,
+	filterByMinDuration,
 	filterByParticipantEmails,
 	filterByParticipantUserIds,
 	filterByPrimaryUserEmails,
+	filterByScope,
 	filterByTrackers,
 } from '../src/gong.js';
 import type {
@@ -1312,5 +1314,61 @@ describe('searchCallsAll with trackers filter', () => {
 		const body = JSON.parse(fetchMock.mock.calls[0][1].body);
 		expect(body.contentSelector.exposedFields.content.trackers).toBe(true);
 		expect(body.contentSelector.exposedFields.content.keyPoints).toBe(true);
+	});
+});
+
+describe('filterByScope', () => {
+	const calls: CallDetails[] = [
+		{ metaData: { id: '1', title: 'External call', scope: 'External' } },
+		{ metaData: { id: '2', title: 'Internal call', scope: 'Internal' } },
+		{ metaData: { id: '3', title: 'Unknown scope', scope: 'Unknown' } },
+		{ metaData: { id: '4', title: 'No scope' } },
+	];
+
+	it('matches External scope exactly', () => {
+		const result = filterByScope(calls, 'External');
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('1');
+	});
+
+	it('matches Internal scope exactly', () => {
+		const result = filterByScope(calls, 'Internal');
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('2');
+	});
+
+	it('excludes calls with null/missing scope', () => {
+		const result = filterByScope(calls, 'External');
+		expect(result.every((c) => c.metaData.id !== '4')).toBe(true);
+	});
+});
+
+describe('filterByMinDuration', () => {
+	const calls: CallDetails[] = [
+		{ metaData: { id: '1', title: 'Short', duration: 120 } },
+		{ metaData: { id: '2', title: 'Medium', duration: 600 } },
+		{ metaData: { id: '3', title: 'Long', duration: 3600 } },
+		{ metaData: { id: '4', title: 'No duration' } },
+	];
+
+	it('includes calls meeting or exceeding the minimum', () => {
+		const result = filterByMinDuration(calls, 600);
+		expect(result).toHaveLength(2);
+		expect(result.map((c) => c.metaData.id).sort()).toEqual(['2', '3']);
+	});
+
+	it('excludes shorter calls', () => {
+		const result = filterByMinDuration(calls, 600);
+		expect(result.every((c) => c.metaData.id !== '1')).toBe(true);
+	});
+
+	it('excludes calls with null/missing duration', () => {
+		const result = filterByMinDuration(calls, 0);
+		expect(result.every((c) => c.metaData.id !== '4')).toBe(true);
+	});
+
+	it('handles zero minimum', () => {
+		const result = filterByMinDuration(calls, 0);
+		expect(result).toHaveLength(3);
 	});
 });
