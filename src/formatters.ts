@@ -97,9 +97,48 @@ function extractAccountName(call: CallDetails): string | null {
 }
 
 /**
+ * Maximum length of the formatted search_calls output before falling back
+ * to compact table format. Matches CircleCI's MCP convention.
+ */
+export const MAX_OUTPUT_LENGTH =
+	Number.parseInt(process.env.MAX_MCP_OUTPUT_LENGTH ?? '', 10) || 50000;
+
+function buildHeader(count: number, totalBeforeFilter?: number): string {
+	if (totalBeforeFilter !== undefined && totalBeforeFilter !== count) {
+		return `**Calls** (${count} of ${totalBeforeFilter} matched)\n`;
+	}
+	return `**Calls** (${count} total)\n`;
+}
+
+function buildCompactTable(response: CallDetailsResponse): string[] {
+	const lines: string[] = [];
+	lines.push('| ID | Title | Date | Duration | Scope |');
+	lines.push('|---|---|---|---|---|');
+	for (const call of response.calls) {
+		const meta = call.metaData;
+		const date = meta.started
+			? new Date(meta.started).toLocaleDateString()
+			: '-';
+		const duration = meta.duration
+			? `${Math.round(meta.duration / 60)}m`
+			: '-';
+		const title = meta.title?.slice(0, 50) ?? '-';
+		lines.push(
+			`| ${meta.id} | ${escapeMarkdown(title)} | ${date} | ${duration} | ${meta.scope ?? '-'} |`,
+		);
+	}
+	return lines;
+}
+
+/**
  * Format call details response with adaptive output.
  * Uses rich per-call blocks when content data is present,
  * falls back to a compact table for metadata-only results.
+ *
+ * If the rich output would exceed MAX_OUTPUT_LENGTH (default 50000,
+ * configurable via MAX_MCP_OUTPUT_LENGTH env var), automatically
+ * downgrades to the compact table with a warning so the LLM caller
+ * sees IDs and titles and can drill into specific calls.
  *
  * trackerFilter, when provided, limits the Trackers line to only
  * trackers whose name matches one of the supplied needles
@@ -111,51 +150,31 @@ export function formatCallDetailsResponse(
 	totalBeforeFilter?: number,
 	trackerFilter?: string[],
 ): string {
-	const lines: string[] = [];
-
-	// Header with optional filter count
-	const count = response.calls.length;
-	if (
-		totalBeforeFilter !== undefined &&
-		totalBeforeFilter !== count
-	) {
-		lines.push(`**Calls** (${count} of ${totalBeforeFilter} matched)\n`);
-	} else {
-		lines.push(`**Calls** (${count} total)\n`);
-	}
+	const header = buildHeader(response.calls.length, totalBeforeFilter);
 
 	if (response.calls.length === 0) {
-		lines.push('No calls found.');
-		return lines.join('\n');
+		return `${header}No calls found.`;
 	}
 
-	// Use rich format when content data is available
 	if (hasRichContent(response.calls)) {
+		const richLines: string[] = [header];
 		for (const call of response.calls) {
-			lines.push(formatCallDetailsBlock(call, trackerFilter));
-			lines.push('');
+			richLines.push(formatCallDetailsBlock(call, trackerFilter));
+			richLines.push('');
 		}
-	} else {
-		// Fallback to compact table for metadata-only results
-		lines.push('| ID | Title | Date | Duration | Scope |');
-		lines.push('|---|---|---|---|---|');
+		const richOutput = richLines.join('\n');
 
-		for (const call of response.calls) {
-			const meta = call.metaData;
-			const date = meta.started
-				? new Date(meta.started).toLocaleDateString()
-				: '-';
-			const duration = meta.duration
-				? `${Math.round(meta.duration / 60)}m`
-				: '-';
-			const title = meta.title?.slice(0, 50) ?? '-';
-			lines.push(
-				`| ${meta.id} | ${escapeMarkdown(title)} | ${date} | ${duration} | ${meta.scope ?? '-'} |`,
-			);
+		if (richOutput.length <= MAX_OUTPUT_LENGTH) {
+			return richOutput;
 		}
+
+		// Output too large — fall back to compact table with a warning so
+		// the LLM caller knows to narrow filters or drill into specific IDs.
+		const warning = `> ⚠️ Result too large for rich format (${richOutput.length.toLocaleString()} chars > ${MAX_OUTPUT_LENGTH.toLocaleString()} cap). Showing compact table. Narrow with filters (scope, minDuration, customerName) or call get_call_summary on specific IDs for detail.\n`;
+		return [header, warning, ...buildCompactTable(response)].join('\n');
 	}
 
-	return lines.join('\n');
+	return [header, ...buildCompactTable(response)].join('\n');
 }
 
 /**

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	MAX_OUTPUT_LENGTH,
 	formatCallDetailsResponse,
 	formatCallSummary,
 	formatCallsResponse,
@@ -458,6 +459,65 @@ describe('formatCallDetailsResponse', () => {
 		expect(result).toContain('Competitor Mentions (2x)');
 		expect(result).not.toContain('Pricing');
 		expect(result).not.toContain('Pain points');
+	});
+
+	it('falls back to compact table when rich output exceeds the limit', () => {
+		// Generate enough rich-content calls to blow past MAX_OUTPUT_LENGTH.
+		// Each call's brief is ~600 bytes; ~150 calls reliably exceeds 50KB.
+		const longBrief = 'A'.repeat(500);
+		const manyCalls = Array.from({ length: 200 }, (_, i) => ({
+			metaData: {
+				id: String(i + 1000),
+				title: `Call ${i + 1}`,
+				started: '2026-04-01T10:00:00Z',
+				duration: 1800,
+				scope: 'External',
+			},
+			parties: [
+				{ name: 'Alice', emailAddress: 'alice@example.com' },
+				{ name: 'Bob', emailAddress: 'bob@example.com' },
+			],
+			content: { brief: longBrief },
+		}));
+		const response: CallDetailsResponse = {
+			requestId: 'test-123',
+			records: {
+				totalRecords: 200,
+				currentPageSize: 200,
+				currentPageNumber: 0,
+			},
+			calls: manyCalls,
+		};
+
+		const result = formatCallDetailsResponse(response);
+		expect(result.length).toBeLessThan(MAX_OUTPUT_LENGTH * 1.2);
+		expect(result).toContain('Result too large for rich format');
+		expect(result).toContain('| ID | Title | Date | Duration | Scope |');
+		// Should still include all call IDs for follow-up drill-down
+		expect(result).toContain('| 1000 |');
+		expect(result).toContain('| 1199 |');
+	});
+
+	it('keeps rich format when under the size cap', () => {
+		const response: CallDetailsResponse = {
+			requestId: 'test-123',
+			records: {
+				totalRecords: 1,
+				currentPageSize: 1,
+				currentPageNumber: 0,
+			},
+			calls: [
+				{
+					metaData: { id: '123', title: 'Compact result' },
+					parties: [{ name: 'Alice' }],
+					content: { brief: 'Short and sweet.' },
+				},
+			],
+		};
+
+		const result = formatCallDetailsResponse(response);
+		expect(result).not.toContain('Result too large');
+		expect(result).toContain('### Compact result');
 	});
 
 	it('omits Trackers line entirely when no trackers fired', () => {

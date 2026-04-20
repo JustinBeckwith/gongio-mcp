@@ -294,8 +294,9 @@ Defaults (always returned): participants, brief summary, and topics — ~3KB per
 - `primaryUserIds` and `participantUserIds` compose: primary narrows the server query, participant post-filters the results.
 - `customerName` is a case-insensitive substring match checked against three sources: CRM account name, external participant email domains, and the call title.
 - **Tracker names vary by workspace.** Call `get_trackers` first to see what is configured before using the `trackers` filter.
-- When `trackers` filter is set, tracker content is automatically included in the response (no need to also add `trackers` to `include`).
+- When `trackers` filter is set, tracker content is automatically included in the response. The output also shows only the trackers you asked about (or only non-zero trackers when no filter is set), so you don't get drowned in `(0x)` entries for every workspace tracker.
 - When no filters match, the tool returns an empty result ("No calls found") rather than an error.
+- If the rich-format output would exceed `MAX_MCP_OUTPUT_LENGTH` (default 50000 chars), the tool falls back to the compact table with a warning. Override via the `MAX_MCP_OUTPUT_LENGTH` environment variable.
 
 **Example workflows:**
 
