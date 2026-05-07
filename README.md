@@ -16,6 +16,9 @@ An MCP (Model Context Protocol) server that provides access to your Gong.io data
 | [`get_call_summary`](#get_call_summary) | AI summary: key points, topics, action items |
 | [`get_call_transcript`](#get_call_transcript) | Full speaker-attributed transcript (paginated) |
 | [`search_calls`](#search_calls) | Advanced call search by host, ID, date range |
+| [`search_calls_by_account`](#search_calls_by_account) | Find calls involving a specific account/company by email domain |
+| [`search_calls_by_opportunity`](#search_calls_by_opportunity) | Find calls linked to specific CRM Opportunities |
+| [`search_transcripts`](#search_transcripts) | Free-text keyword search across transcript sentences |
 | [`get_trackers`](#get_trackers) | List keyword trackers (competitors, topics, etc.) |
 | [`list_workspaces`](#list_workspaces) | List workspaces and get IDs for use in other tools |
 | [`list_library_folders`](#list_library_folders) | List public call library folders |
@@ -235,6 +238,90 @@ Search calls with advanced filters. More flexible than `list_calls` for targeted
 
 </details>
 
+<a name="search_calls_by_account"></a>
+<details>
+<summary><code>search_calls_by_account</code> — Find calls by account/company (email domain)</summary>
+
+Find calls involving a specific account or company by matching the email domains of external participants. The Gong API does not natively support filtering by account name (a [known gap](https://visioneers.gong.io/data-in-gong-71)) — this tool fetches calls in the date range and post-filters on `parties[].emailAddress`. Auto-paginates the underlying `/v2/calls/extensive` endpoint up to `maxCalls`.
+
+**Use this when:**
+- A prospect has multiple email domains (`acme.com`, `acme.io`, regional TLDs) and you need them all
+- You need to join external enrichment data (e.g., "all prospects on Klaviyo" from BuiltWith / Clearbit / a vendor-stack graph) — resolve to a domain list upstream and pass it here
+- Domain-based matching is more reliable than CRM Account names that drift across systems
+
+**Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `domains` | **Yes** | Email domains, e.g. `["acme.com", "acme.io"]`. A call matches if any external participant has an email at one of these domains. |
+| `fromDateTime` | No | Start date in ISO 8601 format |
+| `toDateTime` | No | End date in ISO 8601 format |
+| `workspaceId` | No | Filter by workspace ID |
+| `primaryUserIds` | No | Pre-narrow by call host user IDs (faster, server-side) |
+| `matchCrmAccount` | No | Also match where a CRM Account context object name contains a domain root (e.g. `"acme"` from `"acme.com"`). Requires CRM integration. Default `false`. |
+| `maxCalls` | No | Max calls to fetch & filter (default: 500, max: 5000). Auto-paginates underlying API. |
+| `cursor` | No | Pagination cursor (advanced) |
+
+**Cost note:** This is fetch-then-filter. A 90-day window with no other narrowing typically pages through 1–5 API calls. Combine with `primaryUserIds` to bound cost on long ranges.
+
+</details>
+
+<a name="search_calls_by_opportunity"></a>
+<details>
+<summary><code>search_calls_by_opportunity</code> — Find calls linked to a CRM Opportunity</summary>
+
+Find calls linked to specific CRM Opportunities by ID or name substring. Requires Gong-CRM integration (Salesforce / HubSpot) — calls without CRM linkage will not match.
+
+**Use this when:**
+- You want every call on a specific deal — `opportunityIds: ["006xxxxx"]` is the most precise option
+- Opportunity names are descriptive (e.g. `"Acme Q4 Renewal"`) and you want fuzzy matching across renamed/duplicated opportunities
+
+**Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `opportunityIds` | At least one of `opportunityIds` or `opportunityNames` is required | CRM Opportunity IDs (e.g., Salesforce 18-character IDs) |
+| `opportunityNames` | At least one of `opportunityIds` or `opportunityNames` is required | Name substrings (case-insensitive) matched against the Name field of Opportunity context objects |
+| `fromDateTime` | No | Start date in ISO 8601 format |
+| `toDateTime` | No | End date in ISO 8601 format |
+| `workspaceId` | No | Filter by workspace ID |
+| `primaryUserIds` | No | Pre-narrow by call host user IDs |
+| `maxCalls` | No | Max calls to fetch & filter (default: 500, max: 5000) |
+| `cursor` | No | Pagination cursor (advanced) |
+
+**Cost note:** Uses the same fetch-then-filter pattern as `search_calls_by_account`. CRM context lookup adds no extra API calls — it rides on the same `/v2/calls/extensive` request with `context: "Extended"`.
+
+</details>
+
+<a name="search_transcripts"></a>
+<details>
+<summary><code>search_transcripts</code> — Free-text keyword search across transcripts</summary>
+
+Free-text keyword search across call transcript sentences within a bounded date range. Two-phase: (1) `/v2/calls/extensive` narrows the call set by date + optional `primaryUserIds` / `domains`, (2) `/v2/calls/transcript` fetches transcripts for the narrowed set and returns sentence-level matches with speaker attribution and timestamps.
+
+**Prefer Gong Trackers for recurring terms.** For competitor names, ESP/tech terms (Klaviyo, Braze, Iterable, Postscript, Attentive, Sendgrid, Customer.io, etc.), and other terms you'll search for repeatedly — set them up as Gong Trackers in the UI (one-time, ~30 minutes for ~20 terms). Then use `get_trackers` + `search_calls` + `get_call_summary` instead. Trackers are server-side, the cost is dramatically lower, and they surface counts and timestamps natively. Use `search_transcripts` for ad-hoc one-offs.
+
+**Cost guard:** Date ranges greater than 30 days require additional narrowing via `primaryUserIds` or `domains`. A 6-month unbounded scan would burn API quota and is rejected at the schema level.
+
+**Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `keywords` | **Yes** | Keywords to search for. Each must be at least 2 characters. |
+| `fromDateTime` | **Yes** | Start of date window (ISO 8601). |
+| `toDateTime` | **Yes** | End of date window (ISO 8601). |
+| `primaryUserIds` | Required if window > 30 days and `domains` not set | Narrow to calls hosted by these users before scanning |
+| `domains` | Required if window > 30 days and `primaryUserIds` not set | Narrow to calls with external parties from these domains before scanning |
+| `workspaceId` | No | Filter by workspace ID |
+| `caseSensitive` | No | Default `false`. |
+| `wholeWord` | No | Default `true` — `"ai"` will not match `"said"` or `"again"`. Set `false` for substring matching. |
+| `maxCalls` | No | Max calls to scan (default: 500). |
+| `maxMatchesPerCall` | No | Max sentence matches returned per call (default: 10) — prevents context overflow on calls with many hits. |
+
+**Returns:** Sentence-level matches grouped by call, including speaker name and affiliation (when available), keyword matched, timestamp (mm:ss), and the sentence snippet.
+
+</details>
+
 <a name="get_trackers"></a>
 <details>
 <summary><code>get_trackers</code> — List keyword trackers</summary>
@@ -360,6 +447,9 @@ Once connected to Claude, you can ask:
 - "Who are all the users in our Gong workspace?"
 - "Search for calls hosted by Justin (user ID 232255198215877499) in July 2025"
 - "Look up these user IDs: 111, 222, 333"
+- "Show me all calls from the past 60 days with anyone at acme.com or acme.io"
+- "Find every call attached to opportunity 006xxxxx"
+- "Find Q3 calls where prospects mentioned Klaviyo or Braze, narrowed to John's calls"
 
 ## Contributing
 
