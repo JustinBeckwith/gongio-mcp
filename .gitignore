@@ -12,3 +12,4 @@ coverage
 
 # MCP registry token files
 .mcpregistry_*
+package-lock.json

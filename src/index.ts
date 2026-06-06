@@ -15,9 +15,11 @@ import {
 	formatCallTranscript,
 	formatLibraryFolderCallsResponse,
 	formatLibraryFoldersResponse,
+	formatMatchedCalls,
 	formatSingleCall,
 	formatSingleUser,
 	formatTrackersResponse,
+	formatTranscriptMatches,
 	formatUsersResponse,
 	formatWorkspacesResponse,
 } from './formatters.js';
@@ -32,7 +34,10 @@ import {
 	listCallsRequestSchema,
 	listLibraryFoldersRequestSchema,
 	listUsersRequestSchema,
+	searchCallsByAccountRequestSchema,
+	searchCallsByOpportunityRequestSchema,
 	searchCallsRequestSchema,
+	searchTranscriptsRequestSchema,
 	searchUsersRequestSchema,
 } from './schemas.js';
 
@@ -225,6 +230,183 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 							minLength: 1,
 						},
 					},
+				},
+			},
+			{
+				name: 'search_calls_by_account',
+				description:
+					'Find calls involving a specific account/company by matching email domains of external participants. The Gong API does not natively support filtering by account name — this tool fetches calls in the date range and post-filters on parties[].emailAddress. Auto-paginates up to maxCalls. For external tech-stack joins (e.g., "all calls with prospects on Klaviyo"), resolve domains upstream and pass them here.',
+				inputSchema: {
+					type: 'object',
+					properties: {
+						domains: {
+							type: 'array',
+							description:
+								'Email domains (e.g., ["acme.com", "acme.io"]). A call matches if any external participant has an email at one of these domains.',
+							items: { type: 'string' },
+							minItems: 1,
+						},
+						fromDateTime: {
+							type: 'string',
+							description: 'Start date/time in ISO 8601 format.',
+							pattern:
+								'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$',
+						},
+						toDateTime: {
+							type: 'string',
+							description: 'End date/time in ISO 8601 format.',
+							pattern:
+								'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$',
+						},
+						workspaceId: {
+							type: 'string',
+							pattern: '^\\d{1,20}$',
+							description: 'Filter by workspace ID.',
+						},
+						primaryUserIds: {
+							type: 'array',
+							description:
+								'Pre-narrow by call host user IDs (faster, server-side).',
+							items: { type: 'string', pattern: '^\\d{1,20}$' },
+						},
+						matchCrmAccount: {
+							type: 'boolean',
+							description:
+								'Also match calls where a CRM Account context object name contains a domain root (e.g., "acme" from "acme.com"). Requires CRM integration. Default false.',
+						},
+						maxCalls: {
+							type: 'number',
+							minimum: 1,
+							maximum: 5000,
+							description:
+								'Maximum calls to fetch and filter (default: 500). Auto-paginates underlying API.',
+						},
+						cursor: {
+							type: 'string',
+							description: 'Pagination cursor (advanced).',
+							minLength: 1,
+						},
+					},
+					required: ['domains'],
+				},
+			},
+			{
+				name: 'search_calls_by_opportunity',
+				description:
+					'Find calls linked to specific CRM Opportunities by ID or name substring. Requires Gong-CRM integration (Salesforce/HubSpot) — calls without CRM linkage will not match. Provide opportunityIds OR opportunityNames (or both).',
+				inputSchema: {
+					type: 'object',
+					properties: {
+						opportunityIds: {
+							type: 'array',
+							description:
+								'CRM Opportunity IDs (e.g., Salesforce 18-character IDs).',
+							items: { type: 'string', minLength: 1 },
+						},
+						opportunityNames: {
+							type: 'array',
+							description:
+								'Opportunity name substrings (case-insensitive). Matches if the Opportunity Name field contains any of these.',
+							items: { type: 'string', minLength: 1 },
+						},
+						fromDateTime: {
+							type: 'string',
+							pattern:
+								'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$',
+							description: 'Start date/time in ISO 8601 format.',
+						},
+						toDateTime: {
+							type: 'string',
+							pattern:
+								'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$',
+							description: 'End date/time in ISO 8601 format.',
+						},
+						workspaceId: {
+							type: 'string',
+							pattern: '^\\d{1,20}$',
+							description: 'Filter by workspace ID.',
+						},
+						primaryUserIds: {
+							type: 'array',
+							description: 'Pre-narrow by call host user IDs.',
+							items: { type: 'string', pattern: '^\\d{1,20}$' },
+						},
+						maxCalls: {
+							type: 'number',
+							minimum: 1,
+							maximum: 5000,
+							description: 'Max calls to fetch and filter (default: 500).',
+						},
+						cursor: { type: 'string', minLength: 1 },
+					},
+				},
+			},
+			{
+				name: 'search_transcripts',
+				description:
+					'Free-text keyword search across call transcripts within a bounded date range. Use for ad-hoc searches like "calls mentioning competitor X". For recurring terms, prefer setting up Gong Trackers in the UI and using search_calls + get_call_summary — Trackers are server-side and dramatically cheaper. Date ranges > 30 days require additional narrowing via primaryUserIds or domains. Returns sentence-level matches with speaker attribution and timestamps.',
+				inputSchema: {
+					type: 'object',
+					properties: {
+						keywords: {
+							type: 'array',
+							description:
+								'Keywords to search for. Whole-word, case-insensitive by default.',
+							items: { type: 'string', minLength: 2 },
+							minItems: 1,
+						},
+						fromDateTime: {
+							type: 'string',
+							pattern:
+								'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$',
+							description: 'REQUIRED. Start of date window (ISO 8601).',
+						},
+						toDateTime: {
+							type: 'string',
+							pattern:
+								'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$',
+							description: 'REQUIRED. End of date window (ISO 8601).',
+						},
+						primaryUserIds: {
+							type: 'array',
+							description:
+								'Narrow to calls hosted by these users before scanning.',
+							items: { type: 'string', pattern: '^\\d{1,20}$' },
+						},
+						domains: {
+							type: 'array',
+							description:
+								'Narrow to calls with external parties from these email domains before scanning.',
+							items: { type: 'string' },
+						},
+						workspaceId: {
+							type: 'string',
+							pattern: '^\\d{1,20}$',
+						},
+						caseSensitive: {
+							type: 'boolean',
+							description: 'Match keywords case-sensitively. Default false.',
+						},
+						wholeWord: {
+							type: 'boolean',
+							description:
+								'Match whole words only. Default true (recommended).',
+						},
+						maxCalls: {
+							type: 'number',
+							minimum: 1,
+							maximum: 5000,
+							description: 'Max calls to scan (default: 500).',
+						},
+						maxMatchesPerCall: {
+							type: 'number',
+							minimum: 1,
+							maximum: 50,
+							description:
+								'Max sentence matches returned per call (default: 10).',
+						},
+					},
+					required: ['keywords', 'fromDateTime', 'toDateTime'],
 				},
 			},
 			{
@@ -446,6 +628,62 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 							type: 'text',
 							text: formatCallDetailsResponse(result),
 						},
+					],
+				};
+			}
+
+			case 'search_calls_by_account': {
+				const validated = searchCallsByAccountRequestSchema.parse(args);
+				const result = await gong.searchCallsByAccount(validated);
+				return {
+					content: [
+						{
+							type: 'text',
+							text: formatMatchedCalls(result.calls, {
+								header: `Calls for domain${validated.domains.length === 1 ? '' : 's'}: ${validated.domains.join(', ')}`,
+								totalScanned: result.totalScanned,
+								matched: result.matched,
+								limitedByMaxCalls: result.limitedByMaxCalls,
+							}),
+						},
+					],
+				};
+			}
+
+			case 'search_calls_by_opportunity': {
+				const validated =
+					searchCallsByOpportunityRequestSchema.parse(args);
+				const result = await gong.searchCallsByOpportunity(validated);
+				const labels: string[] = [];
+				if (validated.opportunityIds?.length) {
+					labels.push(`IDs: ${validated.opportunityIds.join(', ')}`);
+				}
+				if (validated.opportunityNames?.length) {
+					labels.push(
+						`names: ${validated.opportunityNames.join(', ')}`,
+					);
+				}
+				return {
+					content: [
+						{
+							type: 'text',
+							text: formatMatchedCalls(result.calls, {
+								header: `Calls for opportunity (${labels.join(' / ')})`,
+								totalScanned: result.totalScanned,
+								matched: result.matched,
+								limitedByMaxCalls: result.limitedByMaxCalls,
+							}),
+						},
+					],
+				};
+			}
+
+			case 'search_transcripts': {
+				const validated = searchTranscriptsRequestSchema.parse(args);
+				const result = await gong.searchTranscripts(validated);
+				return {
+					content: [
+						{ type: 'text', text: formatTranscriptMatches(result) },
 					],
 				};
 			}

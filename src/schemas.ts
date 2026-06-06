@@ -322,7 +322,9 @@ export const partySchema = z.object({
 							objectType: z.string().nullish(),
 							objectId: z.string().nullish(),
 							fields: z
-								.array(z.object({ name: z.string(), value: z.string() }))
+								.array(
+									z.object({ name: z.string(), value: z.unknown().nullish() }),
+								)
 								.nullish(),
 						}),
 					)
@@ -516,7 +518,7 @@ export const callMetadataSchema = z.object({
  */
 export const contextFieldSchema = z.object({
 	name: z.string(),
-	value: z.string(),
+	value: z.unknown().nullish(),
 });
 
 /**
@@ -830,4 +832,263 @@ export function parseLibraryFolderCallsResponse(
 	data: unknown,
 ): LibraryFolderCallsResponse {
 	return libraryFolderCallsResponseSchema.parse(data);
+}
+
+// ============================================================================
+// Account / Opportunity / Keyword Search Schemas
+// ============================================================================
+//
+// These tools wrap POST /v2/calls/extensive and post-filter the response
+// because the Gong API does not natively support filtering by account/company,
+// opportunity, or transcript keywords. See:
+//   https://visioneers.gong.io/data-in-gong-71  (Account name filter — known gap)
+//   https://visioneers.gong.io/developers-79     (Slide/keyword filter — known gap)
+//
+// Cost note: These are fetch-then-filter. The maxCalls cap bounds API usage.
+
+/**
+ * Domain string — bare hostname like "acme.com" (no protocol, no leading @).
+ * Matched against the suffix of party emailAddress values.
+ */
+export const domainSchema = z
+	.string()
+	.regex(
+		/^(?!:\/\/)([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/,
+		'Must be a bare domain like "acme.com" (no protocol, no @)',
+	);
+
+/**
+ * Reasonable cap on how many calls a single tool invocation may fetch.
+ * Pages of /v2/calls/extensive are ~100 records; default of 500 means up to
+ * 5 paginated requests per tool call. Hard ceiling 5000 to protect against
+ * runaway agent loops against the per-day API quota.
+ */
+export const maxCallsSchema = z
+	.number()
+	.int()
+	.min(1)
+	.max(5000)
+	.default(500)
+	.describe(
+		'Maximum number of calls to fetch and post-filter (default: 500, max: 5000). Each Gong API page is ~100 calls, so 500 = up to 5 paginated requests.',
+	);
+
+// --- search_calls_by_account ---
+
+/**
+ * POST /v2/calls/extensive + post-filter on parties[].emailAddress domain
+ * and (when context: "Extended" is requested) on context CRM Account objects.
+ */
+export const searchCallsByAccountRequestSchema = z
+	.object({
+		domains: z
+			.array(domainSchema)
+			.min(1, 'At least one domain is required')
+			.describe(
+				'Email domains to match against external party email addresses (e.g., ["acme.com", "acme.io"]). A call matches if any external participant has an email at one of these domains.',
+			),
+		fromDateTime: iso8601DateTimeSchema.optional(),
+		toDateTime: iso8601DateTimeSchema.optional(),
+		workspaceId: gongIdSchema.optional(),
+		primaryUserIds: z.array(gongIdSchema).optional(),
+		matchCrmAccount: z
+			.boolean()
+			.default(false)
+			.describe(
+				'Also match calls where a CRM Account context object name contains any of the domain root words. Requires CRM integration (Salesforce/HubSpot). Default false.',
+			),
+		maxCalls: maxCallsSchema.optional(),
+		cursor: cursorSchema.optional(),
+	})
+	.refine(
+		(data) => {
+			if (data.fromDateTime && data.toDateTime) {
+				return new Date(data.fromDateTime) < new Date(data.toDateTime);
+			}
+			return true;
+		},
+		{ message: 'fromDateTime must be before toDateTime' },
+	);
+
+export type SearchCallsByAccountRequest = z.infer<
+	typeof searchCallsByAccountRequestSchema
+>;
+
+// --- search_calls_by_opportunity ---
+
+/**
+ * POST /v2/calls/extensive + post-filter on context CRM Opportunity objects.
+ * Requires Gong-CRM integration (Salesforce/HubSpot) — calls without CRM
+ * linkage will not match.
+ */
+export const searchCallsByOpportunityRequestSchema = z
+	.object({
+		opportunityIds: z
+			.array(z.string().min(1))
+			.optional()
+			.describe(
+				'CRM Opportunity IDs to match against context.objects[].objectId where objectType=Opportunity.',
+			),
+		opportunityNames: z
+			.array(z.string().min(1))
+			.optional()
+			.describe(
+				'CRM Opportunity name substrings (case-insensitive) to match against the Name field of Opportunity context objects.',
+			),
+		fromDateTime: iso8601DateTimeSchema.optional(),
+		toDateTime: iso8601DateTimeSchema.optional(),
+		workspaceId: gongIdSchema.optional(),
+		primaryUserIds: z.array(gongIdSchema).optional(),
+		maxCalls: maxCallsSchema.optional(),
+		cursor: cursorSchema.optional(),
+	})
+	.refine(
+		(data) =>
+			(data.opportunityIds && data.opportunityIds.length > 0) ||
+			(data.opportunityNames && data.opportunityNames.length > 0),
+		{
+			message:
+				'At least one of opportunityIds or opportunityNames must be provided',
+		},
+	)
+	.refine(
+		(data) => {
+			if (data.fromDateTime && data.toDateTime) {
+				return new Date(data.fromDateTime) < new Date(data.toDateTime);
+			}
+			return true;
+		},
+		{ message: 'fromDateTime must be before toDateTime' },
+	);
+
+export type SearchCallsByOpportunityRequest = z.infer<
+	typeof searchCallsByOpportunityRequestSchema
+>;
+
+// --- search_transcripts ---
+
+/**
+ * Free-text keyword scan across call transcripts within a bounded date range.
+ * Two-phase: (1) /v2/calls/extensive narrows the call set by date + optional
+ * primaryUserIds/domains, (2) /v2/calls/transcript fetches transcripts for the
+ * narrowed set and post-filters sentences containing any keyword.
+ *
+ * For known recurring terms (competitors, ESPs, key tech), prefer setting up
+ * Gong Trackers in the UI — server-side, no transcript-scan cost — and use
+ * search_calls + get_call_summary instead.
+ */
+export const searchTranscriptsRequestSchema = z
+	.object({
+		keywords: z
+			.array(z.string().min(2))
+			.min(1, 'At least one keyword is required')
+			.describe(
+				'Keywords to search for in transcript sentences (case-insensitive by default). Each keyword must be at least 2 characters.',
+			),
+		fromDateTime: iso8601DateTimeSchema.describe(
+			'REQUIRED. Start of the date window — transcript scan is expensive, so an unbounded date range is rejected.',
+		),
+		toDateTime: iso8601DateTimeSchema.describe(
+			'REQUIRED. End of the date window.',
+		),
+		primaryUserIds: z
+			.array(gongIdSchema)
+			.optional()
+			.describe(
+				'Narrow to calls hosted by these users before scanning transcripts.',
+			),
+		domains: z
+			.array(domainSchema)
+			.optional()
+			.describe(
+				'Narrow to calls with at least one external party from these email domains before scanning transcripts.',
+			),
+		workspaceId: gongIdSchema.optional(),
+		caseSensitive: z
+			.boolean()
+			.default(false)
+			.describe(
+				'If true, match keywords case-sensitively. Default false (case-insensitive).',
+			),
+		wholeWord: z
+			.boolean()
+			.default(true)
+			.describe(
+				'If true (default), match keywords as whole words only — "ai" will not match "said" or "again". Set false for substring matching.',
+			),
+		maxCalls: maxCallsSchema.optional(),
+		maxMatchesPerCall: z
+			.number()
+			.int()
+			.min(1)
+			.max(50)
+			.default(10)
+			.describe(
+				'Maximum sentence matches returned per call (default: 10) to prevent context overflow on calls with many hits.',
+			),
+	})
+	.refine(
+		(data) => new Date(data.fromDateTime) < new Date(data.toDateTime),
+		{ message: 'fromDateTime must be before toDateTime' },
+	)
+	.refine(
+		(data) => {
+			// Require additional narrowing for windows >30 days to bound cost.
+			const days =
+				(new Date(data.toDateTime).getTime() -
+					new Date(data.fromDateTime).getTime()) /
+				(1000 * 60 * 60 * 24);
+			if (days > 30) {
+				return (
+					(data.primaryUserIds && data.primaryUserIds.length > 0) ||
+					(data.domains && data.domains.length > 0)
+				);
+			}
+			return true;
+		},
+		{
+			message:
+				'For date ranges > 30 days, you must also provide primaryUserIds or domains to bound the scan.',
+		},
+	);
+
+export type SearchTranscriptsRequest = z.infer<
+	typeof searchTranscriptsRequestSchema
+>;
+
+/**
+ * A single keyword match within a call transcript.
+ */
+export interface TranscriptMatch {
+	keyword: string;
+	speakerId: string;
+	speakerName?: string;
+	speakerAffiliation?: string;
+	startTime: number;
+	snippet: string;
+}
+
+/**
+ * Per-call match results from search_transcripts.
+ */
+export interface CallTranscriptMatches {
+	callId: string;
+	callTitle?: string;
+	callStarted?: string;
+	callUrl?: string;
+	totalMatches: number;
+	matches: TranscriptMatch[];
+	truncated: boolean;
+}
+
+/**
+ * Aggregate result returned to the caller.
+ */
+export interface SearchTranscriptsResult {
+	keywords: string[];
+	callsScanned: number;
+	callsWithMatches: number;
+	totalMatches: number;
+	results: CallTranscriptMatches[];
+	limitedByMaxCalls: boolean;
 }

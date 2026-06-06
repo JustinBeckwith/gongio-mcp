@@ -10,6 +10,7 @@ import type {
 	CallTranscript,
 	LibraryFolderCallsResponse,
 	LibraryFoldersResponse,
+	SearchTranscriptsResult,
 	SingleCallResponse,
 	SingleUserResponse,
 	TrackersSettingsResponse,
@@ -522,4 +523,112 @@ export function formatLibraryFolderCallsResponse(
 	}
 
 	return lines.join('\n');
+}
+
+/**
+ * Format a CallDetails list (with parties and CRM context) for the
+ * search_calls_by_account / search_calls_by_opportunity tools.
+ *
+ * Shows each match with the matching parties highlighted so the agent can
+ * see why the call matched without re-fetching.
+ */
+export function formatMatchedCalls(
+	calls: CallDetails[],
+	meta: {
+		header: string;
+		totalScanned: number;
+		matched: number;
+		limitedByMaxCalls: boolean;
+	},
+): string {
+	const lines: string[] = [];
+	lines.push(`**${meta.header}**\n`);
+	lines.push(
+		`Scanned ${meta.totalScanned} call${meta.totalScanned === 1 ? '' : 's'}, matched ${meta.matched}.${meta.limitedByMaxCalls ? ' *(maxCalls limit reached — increase maxCalls or narrow date range to scan more.)*' : ''}\n`,
+	);
+
+	if (calls.length === 0) {
+		lines.push('No matching calls.');
+		return lines.join('\n');
+	}
+
+	lines.push('| ID | Title | Date | Duration | External Parties |');
+	lines.push('|---|---|---|---|---|');
+
+	for (const call of calls) {
+		const m = call.metaData;
+		const date = m.started ? new Date(m.started).toLocaleDateString() : '-';
+		const duration = m.duration ? `${Math.round(m.duration / 60)}m` : '-';
+		const title = escapeMarkdown(m.title?.slice(0, 50) ?? '-');
+		const externals =
+			call.parties
+				?.filter((p) => (p.affiliation ?? '').toLowerCase() === 'external')
+				.map((p) => p.name ?? p.emailAddress ?? '?')
+				.slice(0, 3)
+				.map((s) => escapeMarkdown(s.slice(0, 30)))
+				.join(', ') || '-';
+		lines.push(
+			`| ${m.id} | ${title} | ${date} | ${duration} | ${externals} |`,
+		);
+	}
+
+	return lines.join('\n');
+}
+
+/**
+ * Format keyword match results from search_transcripts.
+ */
+export function formatTranscriptMatches(
+	result: SearchTranscriptsResult,
+): string {
+	const lines: string[] = [];
+	const keywords = result.keywords.map((k) => `\`${k}\``).join(', ');
+	lines.push(`**Transcript matches for ${keywords}**\n`);
+	lines.push(
+		`Scanned ${result.callsScanned} call${result.callsScanned === 1 ? '' : 's'} \u2192 ${result.callsWithMatches} with matches \u2192 ${result.totalMatches} total sentence match${result.totalMatches === 1 ? '' : 'es'}.${result.limitedByMaxCalls ? ' *(maxCalls limit reached.)*' : ''}\n`,
+	);
+
+	if (result.results.length === 0) {
+		lines.push('No matching sentences found.');
+		return lines.join('\n');
+	}
+
+	for (const call of result.results) {
+		const date = call.callStarted
+			? new Date(call.callStarted).toLocaleDateString()
+			: '';
+		const titleLine = call.callTitle
+			? escapeMarkdown(call.callTitle)
+			: `Call ${call.callId}`;
+		lines.push(
+			`\n### ${titleLine}${date ? ` \u2014 ${date}` : ''}` +
+				`${call.truncated ? ' *(matches truncated)*' : ''}`,
+		);
+		lines.push(
+			`*ID:* \`${call.callId}\`${call.callUrl ? ` \u2014 [open in Gong](${call.callUrl})` : ''}`,
+		);
+		lines.push('');
+
+		for (const m of call.matches) {
+			const ts = formatTimestamp(m.startTime);
+			const speaker = m.speakerName
+				? `${escapeMarkdown(m.speakerName)}${m.speakerAffiliation ? ` (${m.speakerAffiliation})` : ''}`
+				: `Speaker ${m.speakerId}`;
+			lines.push(
+				`- \`${ts}\` **${speaker}** \u2014 _${escapeMarkdown(`"${m.snippet}"`)}_ *(matched: ${m.keyword})*`,
+			);
+		}
+	}
+
+	return lines.join('\n');
+}
+
+/**
+ * Convert milliseconds (Gong's transcript times) to mm:ss.
+ */
+function formatTimestamp(ms: number): string {
+	const totalSec = Math.floor(ms / 1000);
+	const m = Math.floor(totalSec / 60);
+	const s = totalSec % 60;
+	return `${m}:${String(s).padStart(2, '0')}`;
 }
