@@ -466,8 +466,9 @@ export class GongClient {
 			.filter((r): r is string => Boolean(r));
 
 		const matched = fetched.calls.filter((call) => {
-			// Match 1: any party emailAddress ends with @<domain>
+			// Match 1: any external party emailAddress ends with @<domain>
 			const partyMatch = call.parties?.some((p) => {
+				if ((p.affiliation ?? '').toLowerCase() !== 'external') return false;
 				const email = p.emailAddress?.toLowerCase();
 				if (!email) return false;
 				return lowerDomains.some((d) => email.endsWith(`@${d}`));
@@ -484,7 +485,10 @@ export class GongClient {
 						const nameField = obj.fields?.find(
 							(f) => f.name?.toLowerCase() === 'name',
 						);
-						const name = nameField?.value?.toLowerCase();
+						const name =
+							typeof nameField?.value === 'string'
+								? nameField.value.toLowerCase()
+								: undefined;
 						if (!name) continue;
 						if (lowerDomainRoots.some((root) => name.includes(root))) {
 							return true;
@@ -540,7 +544,10 @@ export class GongClient {
 						const nameField = obj.fields?.find(
 							(f) => f.name?.toLowerCase() === 'name',
 						);
-						const name = nameField?.value?.toLowerCase();
+						const name =
+							typeof nameField?.value === 'string'
+								? nameField.value.toLowerCase()
+								: undefined;
 						if (
 							name &&
 							lowerNames.some((needle) => name.includes(needle))
@@ -584,6 +591,7 @@ export class GongClient {
 			const lowerDomains = options.domains.map((d) => d.toLowerCase());
 			candidateCalls = candidateCalls.filter((call) =>
 				call.parties?.some((p) => {
+					if ((p.affiliation ?? '').toLowerCase() !== 'external') return false;
 					const email = p.emailAddress?.toLowerCase();
 					if (!email) return false;
 					return lowerDomains.some((d) => email.endsWith(`@${d}`));

@@ -322,7 +322,9 @@ export const partySchema = z.object({
 							objectType: z.string().nullish(),
 							objectId: z.string().nullish(),
 							fields: z
-								.array(z.object({ name: z.string(), value: z.string() }))
+								.array(
+									z.object({ name: z.string(), value: z.unknown().nullish() }),
+								)
 								.nullish(),
 						}),
 					)
@@ -516,7 +518,7 @@ export const callMetadataSchema = z.object({
  */
 export const contextFieldSchema = z.object({
 	name: z.string(),
-	value: z.string(),
+	value: z.unknown().nullish(),
 });
 
 /**

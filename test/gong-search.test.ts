@@ -18,7 +18,7 @@ function makeCall(opts: {
 		objects?: Array<{
 			objectType: string;
 			objectId?: string;
-			fields?: Array<{ name: string; value: string }>;
+			fields?: Array<{ name: string; value: unknown }>;
 		}>;
 	}>;
 }) {
@@ -68,25 +68,29 @@ describe('GongClient — search_calls_by_account', () => {
 		vi.restoreAllMocks();
 	});
 
-	it('matches calls where any party email is at the target domain', async () => {
+	it('matches calls where any external party email is at the target domain', async () => {
 		fetchMock.mockResolvedValueOnce({
 			ok: true,
 			json: async () =>
 				makeExtensiveResponse([
 					makeCall({
 						id: '1',
-						parties: [{ emailAddress: 'rep@gong.io' }],
+						parties: [
+							{ emailAddress: 'rep@gong.io', affiliation: 'Internal' },
+						],
 					}),
 					makeCall({
 						id: '2',
 						parties: [
-							{ emailAddress: 'rep@gong.io' },
-							{ emailAddress: 'buyer@acme.com' },
+							{ emailAddress: 'rep@gong.io', affiliation: 'Internal' },
+							{ emailAddress: 'buyer@acme.com', affiliation: 'External' },
 						],
 					}),
 					makeCall({
 						id: '3',
-						parties: [{ emailAddress: 'noone@other.com' }],
+						parties: [
+							{ emailAddress: 'noone@other.com', affiliation: 'External' },
+						],
 					}),
 				]),
 		});
@@ -101,6 +105,28 @@ describe('GongClient — search_calls_by_account', () => {
 		expect(result.limitedByMaxCalls).toBe(false);
 	});
 
+	it('does not match internal participants at the target domain', async () => {
+		fetchMock.mockResolvedValueOnce({
+			ok: true,
+			json: async () =>
+				makeExtensiveResponse([
+					makeCall({
+						id: '1',
+						parties: [
+							{ emailAddress: 'rep@acme.com', affiliation: 'Internal' },
+							{ emailAddress: 'buyer@other.com', affiliation: 'External' },
+						],
+					}),
+				]),
+		});
+
+		const result = await client.searchCallsByAccount({
+			domains: ['acme.com'],
+		});
+
+		expect(result.matched).toBe(0);
+	});
+
 	it('matches case-insensitively and handles multiple domains', async () => {
 		fetchMock.mockResolvedValueOnce({
 			ok: true,
@@ -108,15 +134,21 @@ describe('GongClient — search_calls_by_account', () => {
 				makeExtensiveResponse([
 					makeCall({
 						id: '1',
-						parties: [{ emailAddress: 'BUYER@ACME.COM' }],
+						parties: [
+							{ emailAddress: 'BUYER@ACME.COM', affiliation: 'External' },
+						],
 					}),
 					makeCall({
 						id: '2',
-						parties: [{ emailAddress: 'lead@acme.io' }],
+						parties: [
+							{ emailAddress: 'lead@acme.io', affiliation: 'External' },
+						],
 					}),
 					makeCall({
 						id: '3',
-						parties: [{ emailAddress: 'noone@beta.com' }],
+						parties: [
+							{ emailAddress: 'noone@beta.com', affiliation: 'External' },
+						],
 					}),
 				]),
 		});
@@ -138,7 +170,9 @@ describe('GongClient — search_calls_by_account', () => {
 					// "macme.com" should NOT match "acme.com"
 					makeCall({
 						id: '1',
-						parties: [{ emailAddress: 'rep@macme.com' }],
+						parties: [
+							{ emailAddress: 'rep@macme.com', affiliation: 'External' },
+						],
 					}),
 				]),
 		});
@@ -193,7 +227,9 @@ describe('GongClient — search_calls_by_account', () => {
 			Array.from({ length: 3 }, (_, i) =>
 				makeCall({
 					id: `${i + 1}`,
-					parties: [{ emailAddress: `b${i}@acme.com` }],
+					parties: [
+						{ emailAddress: `b${i}@acme.com`, affiliation: 'External' },
+					],
 				}),
 			),
 			'cursor-2',
@@ -202,7 +238,12 @@ describe('GongClient — search_calls_by_account', () => {
 			Array.from({ length: 3 }, (_, i) =>
 				makeCall({
 					id: `${i + 4}`,
-					parties: [{ emailAddress: `b${i + 3}@acme.com` }],
+					parties: [
+						{
+							emailAddress: `b${i + 3}@acme.com`,
+							affiliation: 'External',
+						},
+					],
 				}),
 			),
 		);
@@ -226,7 +267,9 @@ describe('GongClient — search_calls_by_account', () => {
 			Array.from({ length: 3 }, (_, i) =>
 				makeCall({
 					id: `${i + 1}`,
-					parties: [{ emailAddress: `b${i}@acme.com` }],
+					parties: [
+						{ emailAddress: `b${i}@acme.com`, affiliation: 'External' },
+					],
 				}),
 			),
 			'cursor-2',
@@ -319,6 +362,54 @@ describe('GongClient — search_calls_by_opportunity', () => {
 									{
 										objectType: 'Opportunity',
 										fields: [{ name: 'Name', value: 'Beta Expansion' }],
+									},
+								],
+							},
+						],
+					}),
+				]),
+		});
+
+		const result = await client.searchCallsByOpportunity({
+			opportunityNames: ['acme'],
+		});
+		expect(result.matched).toBe(1);
+		expect(result.calls[0]?.metaData.id).toBe('1');
+	});
+
+	it('ignores non-string CRM fields while matching opportunity names', async () => {
+		fetchMock.mockResolvedValueOnce({
+			ok: true,
+			json: async () =>
+				makeExtensiveResponse([
+					makeCall({
+						id: '1',
+						context: [
+							{
+								objects: [
+									{
+										objectType: 'Opportunity',
+										fields: [
+											{ name: 'Name', value: 'Acme Q4 Renewal' },
+											{ name: 'Amount', value: 250000 },
+											{ name: 'Probability', value: 0.8 },
+										],
+									},
+								],
+							},
+						],
+					}),
+					makeCall({
+						id: '2',
+						context: [
+							{
+								objects: [
+									{
+										objectType: 'Opportunity',
+										fields: [
+											{ name: 'Name', value: 12345 },
+											{ name: 'Amount', value: 50000 },
+										],
 									},
 								],
 							},
@@ -527,11 +618,23 @@ describe('GongClient — search_transcripts', () => {
 				makeExtensiveResponse([
 					makeCall({
 						id: '1',
-						parties: [{ speakerId: 'spk', emailAddress: 'b@acme.com' }],
+						parties: [
+							{
+								speakerId: 'spk',
+								emailAddress: 'b@acme.com',
+								affiliation: 'External',
+							},
+						],
 					}),
 					makeCall({
 						id: '2',
-						parties: [{ speakerId: 'spk', emailAddress: 'b@beta.com' }],
+						parties: [
+							{
+								speakerId: 'spk',
+								emailAddress: 'b@beta.com',
+								affiliation: 'External',
+							},
+						],
 					}),
 				]),
 		});
@@ -564,6 +667,41 @@ describe('GongClient — search_transcripts', () => {
 		const transcriptCall = fetchMock.mock.calls[1];
 		const body = JSON.parse(transcriptCall?.[1].body);
 		expect(body.filter.callIds).toEqual(['1']);
+	});
+
+	it('does not use internal participants for transcript domain narrowing', async () => {
+		fetchMock.mockResolvedValueOnce({
+			ok: true,
+			json: async () =>
+				makeExtensiveResponse([
+					makeCall({
+						id: '1',
+						parties: [
+							{
+								speakerId: 'rep',
+								emailAddress: 'rep@acme.com',
+								affiliation: 'Internal',
+							},
+							{
+								speakerId: 'buyer',
+								emailAddress: 'buyer@other.com',
+								affiliation: 'External',
+							},
+						],
+					}),
+				]),
+		});
+
+		const result = await client.searchTranscripts({
+			keywords: ['klaviyo'],
+			fromDateTime: '2024-03-01T00:00:00Z',
+			toDateTime: '2024-03-15T00:00:00Z',
+			domains: ['acme.com'],
+		});
+
+		expect(result.callsScanned).toBe(0);
+		expect(result.totalMatches).toBe(0);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 
 	it('truncates matches at maxMatchesPerCall', async () => {
