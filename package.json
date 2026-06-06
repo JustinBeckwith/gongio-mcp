@@ -44,7 +44,7 @@
 	},
 	"homepage": "https://github.com/JustinBeckwith/gongio-mcp#readme",
 	"engines": {
-		"node": ">=18.0.0"
+		"node": ">=22.0.0"
 	},
 	"packageManager": "pnpm@10.34.1",
 	"devDependencies": {
