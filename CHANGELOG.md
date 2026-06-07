@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.0.0](https://github.com/JustinBeckwith/gongio-mcp/compare/gongio-mcp-v1.5.0...gongio-mcp-v2.0.0) (2026-06-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* require nodejs 22 and up ([#66](https://github.com/JustinBeckwith/gongio-mcp/issues/66))
+
+### Features
+
+* add search_calls_by_account, search_calls_by_opportunity, search_transcripts ([#55](https://github.com/JustinBeckwith/gongio-mcp/issues/55)) ([41cc491](https://github.com/JustinBeckwith/gongio-mcp/commit/41cc491827fb523a25f6b8f9469e4b8e5028a561))
+* **search_calls:** participant, customer, tracker, and metadata filters with rich output ([#49](https://github.com/JustinBeckwith/gongio-mcp/issues/49)) ([b593905](https://github.com/JustinBeckwith/gongio-mcp/commit/b5939053b94950aaaee7ff1ad257b2609584d328))
+
+
+### Build System
+
+* require nodejs 22 and up ([#66](https://github.com/JustinBeckwith/gongio-mcp/issues/66)) ([114820d](https://github.com/JustinBeckwith/gongio-mcp/commit/114820d34ba9873827790de5450082d5fec0db67))
+
 ## [1.5.0](https://github.com/JustinBeckwith/gongio-mcp/compare/gongio-mcp-v1.4.1...gongio-mcp-v1.5.0) (2026-02-27)
 
 
