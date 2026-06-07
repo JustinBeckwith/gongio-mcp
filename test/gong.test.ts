@@ -1323,6 +1323,54 @@ describe('searchCallsAll with trackers filter', () => {
 		expect(body.contentSelector.exposedFields.content.trackers).toBe(true);
 		expect(body.contentSelector.exposedFields.content.keyPoints).toBe(true);
 	});
+
+	it('auto-enables extended context when customerName filter is set', async () => {
+		const mockResponse: CallDetailsResponse = {
+			requestId: 'test',
+			records: {
+				totalRecords: 0,
+				currentPageSize: 0,
+				currentPageNumber: 0,
+			},
+			calls: [],
+		};
+
+		fetchMock.mockResolvedValueOnce({
+			ok: true,
+			json: async () => mockResponse,
+		});
+
+		await client.searchCallsAll({ customerName: 'Acme' });
+
+		const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+		expect(body.contentSelector.context).toBe('Extended');
+	});
+
+	it('does not duplicate context when customerName and include context are both set', async () => {
+		const mockResponse: CallDetailsResponse = {
+			requestId: 'test',
+			records: {
+				totalRecords: 0,
+				currentPageSize: 0,
+				currentPageNumber: 0,
+			},
+			calls: [],
+		};
+
+		fetchMock.mockResolvedValueOnce({
+			ok: true,
+			json: async () => mockResponse,
+		});
+
+		await client.searchCallsAll({
+			customerName: 'Acme',
+			include: ['context', 'keyPoints'],
+		});
+
+		const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+		expect(body.contentSelector.context).toBe('Extended');
+		expect(body.contentSelector.exposedFields.content.keyPoints).toBe(true);
+	});
 });
 
 describe('filterByScope', () => {

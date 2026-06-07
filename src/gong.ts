@@ -623,11 +623,17 @@ export class GongClient {
 		let pageCount = 0;
 		let requestId = '';
 
-		// Auto-enable tracker content when filtering by trackers
+		// Auto-enable fields required by client-side filters whose predicates
+		// depend on optional Gong response sections.
+		const requiredInclude = [
+			...(options.include ?? []),
+			...(options.trackers && options.trackers.length > 0 ? ['trackers'] : []),
+			...(options.customerName ? ['context'] : []),
+		];
 		const include =
-			options.trackers && options.trackers.length > 0
-				? Array.from(new Set([...(options.include ?? []), 'trackers']))
-				: options.include;
+			requiredInclude.length > 0
+				? Array.from(new Set(requiredInclude))
+				: undefined;
 
 		// Only pass server-side filter options to the API
 		const apiOptions = {
