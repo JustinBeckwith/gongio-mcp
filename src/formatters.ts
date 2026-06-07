@@ -64,40 +64,250 @@ export function formatCallsResponse(response: CallsResponse): string {
 }
 
 /**
- * Format call details response as markdown table (same format as formatCallsResponse)
- * Used for search_calls which returns CallDetailsResponse from /v2/calls/extensive
+ * Check if any call in the response has rich content beyond metadata.
  */
-export function formatCallDetailsResponse(
-	response: CallDetailsResponse,
-): string {
-	const lines: string[] = [];
+function hasRichContent(calls: CallDetails[]): boolean {
+	return calls.some(
+		(c) =>
+			(c.parties && c.parties.length > 0) ||
+			c.content?.brief ||
+			(c.content?.topics && c.content.topics.length > 0),
+	);
+}
 
-	lines.push(`**Calls** (${response.records.totalRecords} total)\n`);
-
-	if (response.calls.length === 0) {
-		lines.push('No calls found.');
-		return lines.join('\n');
+/**
+ * Extract CRM account name from call context, if available.
+ */
+function extractAccountName(call: CallDetails): string | null {
+	for (const ctx of call.context ?? []) {
+		for (const obj of ctx.objects ?? []) {
+			if (obj.objectType === 'Account') {
+				for (const field of obj.fields ?? []) {
+					if (
+						field.name.toLowerCase() === 'name' &&
+						typeof field.value === 'string'
+					) {
+						return field.value;
+					}
+				}
+			}
+		}
 	}
+	return null;
+}
 
+/**
+ * Maximum length of the formatted search_calls output before falling back
+ * to compact table format. Matches CircleCI's MCP convention.
+ */
+export const MAX_OUTPUT_LENGTH =
+	Number.parseInt(process.env.MAX_MCP_OUTPUT_LENGTH ?? '', 10) || 50000;
+
+function buildHeader(count: number, totalBeforeFilter?: number): string {
+	if (totalBeforeFilter !== undefined && totalBeforeFilter !== count) {
+		return `**Calls** (${count} of ${totalBeforeFilter} matched)\n`;
+	}
+	return `**Calls** (${count} total)\n`;
+}
+
+function buildCompactTable(response: CallDetailsResponse): string[] {
+	const lines: string[] = [];
 	lines.push('| ID | Title | Date | Duration | Scope |');
 	lines.push('|---|---|---|---|---|');
-
 	for (const call of response.calls) {
 		const meta = call.metaData;
 		const date = meta.started
 			? new Date(meta.started).toLocaleDateString()
 			: '-';
-		const duration = meta.duration ? `${Math.round(meta.duration / 60)}m` : '-';
+		const duration = meta.duration
+			? `${Math.round(meta.duration / 60)}m`
+			: '-';
 		const title = meta.title?.slice(0, 50) ?? '-';
 		lines.push(
 			`| ${meta.id} | ${escapeMarkdown(title)} | ${date} | ${duration} | ${meta.scope ?? '-'} |`,
 		);
 	}
+	return lines;
+}
 
-	if (response.records.cursor) {
-		lines.push(
-			`\n*More results available. Cursor:* \`${response.records.cursor}\``,
+/**
+ * Format call details response with adaptive output.
+ * Uses rich per-call blocks when content data is present,
+ * falls back to a compact table for metadata-only results.
+ *
+ * If the rich output would exceed MAX_OUTPUT_LENGTH (default 50000,
+ * configurable via MAX_MCP_OUTPUT_LENGTH env var), automatically
+ * downgrades to the compact table with a warning so the LLM caller
+ * sees IDs and titles and can drill into specific calls.
+ *
+ * trackerFilter, when provided, limits the Trackers line to only
+ * trackers whose name matches one of the supplied needles
+ * (case-insensitive substring). Without a filter, all non-zero
+ * trackers are shown.
+ */
+export function formatCallDetailsResponse(
+	response: CallDetailsResponse,
+	totalBeforeFilter?: number,
+	trackerFilter?: string[],
+): string {
+	const header = buildHeader(response.calls.length, totalBeforeFilter);
+
+	if (response.calls.length === 0) {
+		return `${header}No calls found.`;
+	}
+
+	if (hasRichContent(response.calls)) {
+		const richLines: string[] = [header];
+		for (const call of response.calls) {
+			richLines.push(formatCallDetailsBlock(call, trackerFilter));
+			richLines.push('');
+		}
+		const richOutput = richLines.join('\n');
+
+		if (richOutput.length <= MAX_OUTPUT_LENGTH) {
+			return richOutput;
+		}
+
+		// Output too large — fall back to compact table with a warning so
+		// the LLM caller knows to narrow filters or drill into specific IDs.
+		const warning = `> ⚠️ Result too large for rich format (${richOutput.length.toLocaleString()} chars > ${MAX_OUTPUT_LENGTH.toLocaleString()} cap). Showing compact table. Narrow with filters (scope, minDuration, customerName) or call get_call_summary on specific IDs for detail.\n`;
+		return [header, warning, ...buildCompactTable(response)].join('\n');
+	}
+
+	return [header, ...buildCompactTable(response)].join('\n');
+}
+
+/**
+ * Format a single call as a rich block for search results.
+ */
+function formatCallDetailsBlock(
+	call: CallDetails,
+	trackerFilter?: string[],
+): string {
+	const lines: string[] = [];
+	const meta = call.metaData;
+
+	// Title
+	lines.push(`### ${escapeMarkdown(meta.title?.slice(0, 80) ?? 'Untitled Call')}`);
+
+	// Metadata line
+	const metaParts: string[] = [`**ID:** ${meta.id}`];
+	if (meta.started) {
+		metaParts.push(
+			`**Date:** ${new Date(meta.started).toLocaleDateString()}`,
 		);
+	}
+	if (meta.duration) {
+		metaParts.push(`**Duration:** ${Math.round(meta.duration / 60)}m`);
+	}
+	if (meta.scope) {
+		metaParts.push(`**Scope:** ${meta.scope}`);
+	}
+	lines.push(metaParts.join(' | '));
+
+	// Account name from CRM context
+	const account = extractAccountName(call);
+	if (account) {
+		lines.push(`**Account:** ${escapeMarkdown(account)}`);
+	}
+
+	// Participants (compact single line)
+	if (call.parties && call.parties.length > 0) {
+		const participants = call.parties
+			.map((p) => {
+				const name = p.name ?? p.emailAddress ?? 'Unknown';
+				const role = p.affiliation ? ` (${p.affiliation})` : '';
+				return `${escapeMarkdown(name)}${role}`;
+			})
+			.join(', ');
+		lines.push(`**Participants:** ${participants}`);
+	}
+
+	// Brief summary
+	if (call.content?.brief) {
+		lines.push(`**Summary:** ${escapeMarkdown(call.content.brief)}`);
+	}
+
+	// Topics (compact)
+	if (call.content?.topics && call.content.topics.length > 0) {
+		const topics = call.content.topics
+			.map(
+				(t) =>
+					`${escapeMarkdown(t.name)} (${Math.round((t.duration ?? 0) / 60)}m)`,
+			)
+			.join(', ');
+		lines.push(`**Topics:** ${topics}`);
+	}
+
+	// Key Points (optional)
+	if (call.content?.keyPoints && call.content.keyPoints.length > 0) {
+		lines.push('**Key Points:**');
+		for (const point of call.content.keyPoints) {
+			lines.push(`- ${escapeMarkdown(point.text)}`);
+		}
+	}
+
+	// Trackers (optional, compact). Filter to relevance:
+	// - if trackerFilter is supplied, show only matching trackers (substring, case-insensitive)
+	// - otherwise show only trackers with count > 0 (drop the noisy 0x entries)
+	if (call.content?.trackers && call.content.trackers.length > 0) {
+		const needles = trackerFilter?.map((n) => n.toLowerCase());
+		const visible = call.content.trackers.filter((t) => {
+			if (t.count <= 0) return false;
+			if (!needles || needles.length === 0) return true;
+			return needles.some((needle) => t.name.toLowerCase().includes(needle));
+		});
+		if (visible.length > 0) {
+			const trackers = visible
+				.map((t) => `${escapeMarkdown(t.name)} (${t.count}x)`)
+				.join(', ');
+			lines.push(`**Trackers:** ${trackers}`);
+		}
+	}
+
+	// Highlights (optional)
+	if (call.content?.highlights && call.content.highlights.length > 0) {
+		lines.push('**Highlights:**');
+		for (const section of call.content.highlights) {
+			if (section.title) {
+				lines.push(`  *${escapeMarkdown(section.title)}*`);
+			}
+			for (const item of section.items ?? []) {
+				if (item.text) {
+					lines.push(`  - ${escapeMarkdown(item.text)}`);
+				}
+			}
+		}
+	}
+
+	// Speakers (optional)
+	if (call.interaction?.speakers && call.interaction.speakers.length > 0) {
+		const speakerMap = new Map<string, string>();
+		for (const p of call.parties ?? []) {
+			if (p.id) {
+				speakerMap.set(p.id, p.name ?? p.emailAddress ?? 'Unknown');
+			}
+		}
+		const speakers = call.interaction.speakers
+			.map((s) => {
+				const name = speakerMap.get(s.id) ?? s.id;
+				const time = s.talkTime
+					? `${Math.round(s.talkTime / 60)}m`
+					: '-';
+				return `${escapeMarkdown(name)}: ${time}`;
+			})
+			.join(', ');
+		lines.push(`**Talk Time:** ${speakers}`);
+	}
+
+	// Comments (optional)
+	if (call.collaboration?.publicComments && call.collaboration.publicComments.length > 0) {
+		lines.push('**Comments:**');
+		for (const comment of call.collaboration.publicComments) {
+			if (comment.comment) {
+				lines.push(`- ${escapeMarkdown(comment.comment)}`);
+			}
+		}
 	}
 
 	return lines.join('\n');
@@ -401,22 +611,28 @@ export function formatTrackersResponse(
 		return lines.join('\n');
 	}
 
-	lines.push('| Name | Affiliation | Tracks | Keywords |');
-	lines.push('|------|-------------|--------|----------|');
-
 	for (const tracker of trackers) {
-		const name = escapeMarkdown(tracker.trackerName?.slice(0, 40) ?? '-');
-		const affiliation = tracker.affiliation ?? '-';
-		const tracks = tracker.saidAt ?? '-';
+		const name = tracker.trackerName ?? 'Unnamed Tracker';
+		const keywords = (tracker.languageKeywords ?? []).flatMap(
+			(lk) => lk.keywords ?? [],
+		);
 
-		const allKeywords = (tracker.languageKeywords ?? [])
-			.flatMap((lk) => lk.keywords ?? [])
-			.slice(0, 5)
-			.map((k) => escapeMarkdown(k))
-			.join(', ');
-		const keywordsDisplay = allKeywords || '-';
+		lines.push(`### ${escapeMarkdown(name)}`);
+		const metaParts: string[] = [];
+		if (tracker.affiliation) {
+			metaParts.push(`**Affiliation:** ${tracker.affiliation}`);
+		}
+		if (tracker.saidAt) {
+			metaParts.push(`**Tracks:** ${tracker.saidAt}`);
+		}
+		metaParts.push(`**Keyword count:** ${keywords.length}`);
+		lines.push(metaParts.join(' | '));
 
-		lines.push(`| ${name} | ${affiliation} | ${tracks} | ${keywordsDisplay} |`);
+		if (keywords.length > 0) {
+			const display = keywords.map((k) => escapeMarkdown(k)).join(', ');
+			lines.push(`**Keywords:** ${display}`);
+		}
+		lines.push('');
 	}
 
 	return lines.join('\n');

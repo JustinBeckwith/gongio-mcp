@@ -1,6 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GongClient } from '../src/gong.js';
+import {
+	GongClient,
+	buildContentSelector,
+	filterByCustomerName,
+	filterByDirection,
+	filterByExcludeParticipantEmails,
+	filterByExcludeParticipantUserIds,
+	filterByExcludePrimaryUserIds,
+	filterByLanguage,
+	filterByMaxDuration,
+	filterByMinDuration,
+	filterByParticipantEmails,
+	filterByParticipantUserIds,
+	filterByPrimaryUserEmails,
+	filterByScope,
+	filterBySystem,
+	filterByTitleContains,
+	filterByTrackers,
+} from '../src/gong.js';
 import type {
+	CallDetails,
 	CallDetailsResponse,
 	LibraryFolderCallsResponse,
 	LibraryFoldersResponse,
@@ -287,7 +306,7 @@ describe('GongClient', () => {
 			expect(result.calls[0].metaData.title).toBe('Important Call');
 		});
 
-		it('omits contentSelector for minimal response', async () => {
+		it('includes default contentSelector with parties, brief, and topics', async () => {
 			const mockResponse: CallDetailsResponse = {
 				requestId: 'test-123',
 				records: {
@@ -306,8 +325,71 @@ describe('GongClient', () => {
 			await client.searchCalls({});
 
 			const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-			expect(callBody.contentSelector).toBeUndefined();
+			expect(callBody.contentSelector).toBeDefined();
+			expect(callBody.contentSelector.exposedFields.parties).toBe(true);
+			expect(callBody.contentSelector.exposedFields.content.brief).toBe(
+				true,
+			);
+			expect(callBody.contentSelector.exposedFields.content.topics).toBe(
+				true,
+			);
 			expect(callBody.filter).toBeDefined();
+		});
+
+		it('adds include fields to contentSelector', async () => {
+			const mockResponse: CallDetailsResponse = {
+				requestId: 'test-123',
+				records: {
+					totalRecords: 0,
+					currentPageSize: 0,
+					currentPageNumber: 1,
+				},
+				calls: [],
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			await client.searchCalls({
+				include: ['keyPoints', 'trackers', 'speakers', 'context'],
+			});
+
+			const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+			const cs = callBody.contentSelector;
+			expect(cs.exposedFields.content.keyPoints).toBe(true);
+			expect(cs.exposedFields.content.trackers).toBe(true);
+			expect(cs.exposedFields.interaction.speakers).toBe(true);
+			expect(cs.context).toBe('Extended');
+		});
+
+		it('returns empty response on 404 "No calls found"', async () => {
+			fetchMock.mockResolvedValueOnce({
+				ok: false,
+				status: 404,
+				statusText: 'Not Found',
+				text: async () =>
+					'{"requestId":"x","errors":["No calls found corresponding to the provided filters"]}',
+			});
+
+			const result = await client.searchCalls({});
+			expect(result.calls).toHaveLength(0);
+			expect(result.records.totalRecords).toBe(0);
+		});
+
+		it('propagates real errors (400)', async () => {
+			fetchMock.mockResolvedValueOnce({
+				ok: false,
+				status: 400,
+				statusText: 'Bad Request',
+				text: async () =>
+					'{"requestId":"x","errors":["Json parse error"]}',
+			});
+
+			await expect(client.searchCalls({})).rejects.toThrow(
+				/400.*Json parse error/,
+			);
 		});
 	});
 
@@ -640,5 +722,936 @@ describe('GongClient', () => {
 			expect(result.calls).toHaveLength(1);
 			expect(result.calls?.[0]?.id).toBe('111222333');
 		});
+	});
+
+	describe('searchCallsAll', () => {
+		it('returns all calls from a single page', async () => {
+			const mockResponse: CallDetailsResponse = {
+				requestId: 'req-1',
+				records: {
+					totalRecords: 2,
+					currentPageSize: 2,
+					currentPageNumber: 0,
+				},
+				calls: [
+					{ metaData: { id: '1', title: 'Call 1' } },
+					{ metaData: { id: '2', title: 'Call 2' } },
+				],
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			const { response, totalBeforeFilter } =
+				await client.searchCallsAll({});
+			expect(response.calls).toHaveLength(2);
+			expect(totalBeforeFilter).toBe(2);
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+		});
+
+		it('accumulates calls across multiple pages', async () => {
+			const page1: CallDetailsResponse = {
+				requestId: 'req-1',
+				records: {
+					totalRecords: 3,
+					currentPageSize: 2,
+					currentPageNumber: 0,
+					cursor: 'page-2',
+				},
+				calls: [
+					{ metaData: { id: '1', title: 'Call 1' } },
+					{ metaData: { id: '2', title: 'Call 2' } },
+				],
+			};
+			const page2: CallDetailsResponse = {
+				requestId: 'req-2',
+				records: {
+					totalRecords: 3,
+					currentPageSize: 1,
+					currentPageNumber: 1,
+				},
+				calls: [{ metaData: { id: '3', title: 'Call 3' } }],
+			};
+
+			fetchMock
+				.mockResolvedValueOnce({
+					ok: true,
+					json: async () => page1,
+				})
+				.mockResolvedValueOnce({
+					ok: true,
+					json: async () => page2,
+				});
+
+			const { response, totalBeforeFilter } =
+				await client.searchCallsAll({});
+			expect(response.calls).toHaveLength(3);
+			expect(totalBeforeFilter).toBe(3);
+			expect(fetchMock).toHaveBeenCalledTimes(2);
+
+			// Verify cursor was passed on second call
+			const secondCallBody = JSON.parse(
+				fetchMock.mock.calls[1][1].body,
+			);
+			expect(secondCallBody.cursor).toBe('page-2');
+		});
+
+		it('returns empty results for no calls', async () => {
+			const mockResponse: CallDetailsResponse = {
+				requestId: 'req-1',
+				records: {
+					totalRecords: 0,
+					currentPageSize: 0,
+					currentPageNumber: 0,
+				},
+				calls: [],
+			};
+
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: async () => mockResponse,
+			});
+
+			const { response, totalBeforeFilter } =
+				await client.searchCallsAll({});
+			expect(response.calls).toHaveLength(0);
+			expect(totalBeforeFilter).toBe(0);
+		});
+
+		it('passes contentSelector through on every page request', async () => {
+			const page1: CallDetailsResponse = {
+				requestId: 'req-1',
+				records: {
+					totalRecords: 2,
+					currentPageSize: 1,
+					currentPageNumber: 0,
+					cursor: 'page-2',
+				},
+				calls: [{ metaData: { id: '1', title: 'Call 1' } }],
+			};
+			const page2: CallDetailsResponse = {
+				requestId: 'req-2',
+				records: {
+					totalRecords: 2,
+					currentPageSize: 1,
+					currentPageNumber: 1,
+				},
+				calls: [{ metaData: { id: '2', title: 'Call 2' } }],
+			};
+
+			fetchMock
+				.mockResolvedValueOnce({
+					ok: true,
+					json: async () => page1,
+				})
+				.mockResolvedValueOnce({
+					ok: true,
+					json: async () => page2,
+				});
+
+			await client.searchCallsAll({ include: ['keyPoints'] });
+
+			for (const call of fetchMock.mock.calls) {
+				const body = JSON.parse(call[1].body);
+				expect(body.contentSelector).toBeDefined();
+				expect(
+					body.contentSelector.exposedFields.content.keyPoints,
+				).toBe(true);
+			}
+		});
+	});
+});
+
+describe('buildContentSelector', () => {
+	it('returns default fields when no include is provided', () => {
+		const selector = buildContentSelector();
+		expect(selector.exposedFields).toEqual({
+			parties: true,
+			content: { brief: true, topics: true },
+		});
+	});
+
+	it('returns default fields when include is undefined', () => {
+		const selector = buildContentSelector(undefined);
+		expect(selector.exposedFields).toEqual({
+			parties: true,
+			content: { brief: true, topics: true },
+		});
+	});
+
+	it('adds keyPoints to content fields', () => {
+		const selector = buildContentSelector(['keyPoints']);
+		const content = (selector.exposedFields as Record<string, unknown>)
+			.content as Record<string, boolean>;
+		expect(content.keyPoints).toBe(true);
+		expect(content.brief).toBe(true);
+		expect(content.topics).toBe(true);
+	});
+
+	it('adds trackers to content fields', () => {
+		const selector = buildContentSelector(['trackers']);
+		const content = (selector.exposedFields as Record<string, unknown>)
+			.content as Record<string, boolean>;
+		expect(content.trackers).toBe(true);
+	});
+
+	it('adds highlights to content fields', () => {
+		const selector = buildContentSelector(['highlights']);
+		const content = (selector.exposedFields as Record<string, unknown>)
+			.content as Record<string, boolean>;
+		expect(content.highlights).toBe(true);
+	});
+
+	it('adds outline to content fields', () => {
+		const selector = buildContentSelector(['outline']);
+		const content = (selector.exposedFields as Record<string, unknown>)
+			.content as Record<string, boolean>;
+		expect(content.outline).toBe(true);
+	});
+
+	it('adds speakers to interaction fields', () => {
+		const selector = buildContentSelector(['speakers']);
+		const exposed = selector.exposedFields as Record<string, unknown>;
+		expect(exposed.interaction).toEqual({ speakers: true });
+	});
+
+	it('adds publicComments to collaboration fields', () => {
+		const selector = buildContentSelector(['comments']);
+		const exposed = selector.exposedFields as Record<string, unknown>;
+		expect(exposed.collaboration).toEqual({ publicComments: true });
+	});
+
+	it('sets context to Extended', () => {
+		const selector = buildContentSelector(['context']);
+		expect(selector.context).toBe('Extended');
+	});
+
+	it('sets media to true', () => {
+		const selector = buildContentSelector(['media']);
+		const exposed = selector.exposedFields as Record<string, unknown>;
+		expect(exposed.media).toBe(true);
+	});
+
+	it('handles multiple include values', () => {
+		const selector = buildContentSelector([
+			'keyPoints',
+			'speakers',
+			'context',
+			'media',
+		]);
+		const exposed = selector.exposedFields as Record<string, unknown>;
+		const content = exposed.content as Record<string, boolean>;
+		expect(content.keyPoints).toBe(true);
+		expect(exposed.interaction).toEqual({ speakers: true });
+		expect(selector.context).toBe('Extended');
+		expect(exposed.media).toBe(true);
+	});
+});
+
+describe('filterByParticipantUserIds', () => {
+	const calls: CallDetails[] = [
+		{
+			metaData: { id: '1', title: 'Call 1' },
+			parties: [
+				{ userId: '100', name: 'Alice' },
+				{ userId: '200', name: 'Bob' },
+			],
+		},
+		{
+			metaData: { id: '2', title: 'Call 2' },
+			parties: [{ userId: '300', name: 'Charlie' }],
+		},
+		{
+			metaData: { id: '3', title: 'Call 3' },
+			parties: [],
+		},
+	];
+
+	it('returns calls where a party has a matching userId', () => {
+		const result = filterByParticipantUserIds(calls, ['200']);
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('1');
+	});
+
+	it('matches multiple user IDs', () => {
+		const result = filterByParticipantUserIds(calls, ['100', '300']);
+		expect(result).toHaveLength(2);
+	});
+
+	it('returns empty when no match', () => {
+		const result = filterByParticipantUserIds(calls, ['999']);
+		expect(result).toHaveLength(0);
+	});
+
+	it('handles calls with null parties', () => {
+		const callsWithNull: CallDetails[] = [
+			{ metaData: { id: '1', title: 'No parties' }, parties: null },
+		];
+		const result = filterByParticipantUserIds(callsWithNull, ['100']);
+		expect(result).toHaveLength(0);
+	});
+});
+
+describe('filterByParticipantEmails', () => {
+	const calls: CallDetails[] = [
+		{
+			metaData: { id: '1', title: 'Call 1' },
+			parties: [
+				{ emailAddress: 'alice@example.com', name: 'Alice' },
+				{ emailAddress: 'bob@example.com', name: 'Bob' },
+			],
+		},
+		{
+			metaData: { id: '2', title: 'Call 2' },
+			parties: [{ name: 'No Email' }],
+		},
+	];
+
+	it('matches email case-insensitively', () => {
+		const result = filterByParticipantEmails(calls, ['ALICE@EXAMPLE.COM']);
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('1');
+	});
+
+	it('returns empty when no match', () => {
+		const result = filterByParticipantEmails(calls, ['nobody@example.com']);
+		expect(result).toHaveLength(0);
+	});
+
+	it('handles parties with null emailAddress', () => {
+		const result = filterByParticipantEmails(calls, ['noemail@test.com']);
+		expect(result).toHaveLength(0);
+	});
+});
+
+describe('filterByCustomerName', () => {
+	const calls: CallDetails[] = [
+		{
+			metaData: { id: '1', title: 'Vendor // Acme Corp Sync' },
+			context: [
+				{
+					system: 'HubSpot',
+					objects: [
+						{
+							objectType: 'Account',
+							objectId: '123',
+							fields: [{ name: 'Name', value: 'Acme Corporation' }],
+						},
+					],
+				},
+			],
+			parties: [
+				{
+					emailAddress: 'john@acme.com',
+					affiliation: 'External',
+					name: 'John',
+				},
+			],
+		},
+		{
+			metaData: { id: '2', title: 'Internal Standup' },
+			parties: [
+				{
+					emailAddress: 'alice@example.com',
+					affiliation: 'Internal',
+					name: 'Alice',
+				},
+			],
+		},
+		{
+			metaData: { id: '3', title: 'Globex Meeting' },
+			parties: [
+				{
+					emailAddress: 'hank@globex.com',
+					affiliation: 'External',
+					name: 'Hank',
+				},
+			],
+		},
+	];
+
+	it('matches CRM Account Name', () => {
+		const result = filterByCustomerName(calls, 'Acme');
+		expect(result.some((c) => c.metaData.id === '1')).toBe(true);
+	});
+
+	it('matches external participant email domain', () => {
+		const result = filterByCustomerName(calls, 'globex');
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('3');
+	});
+
+	it('matches call title', () => {
+		const result = filterByCustomerName(calls, 'Acme Corp');
+		expect(result.some((c) => c.metaData.id === '1')).toBe(true);
+	});
+
+	it('is case-insensitive', () => {
+		const result = filterByCustomerName(calls, 'acme');
+		expect(result.some((c) => c.metaData.id === '1')).toBe(true);
+	});
+
+	it('does not match internal email domains', () => {
+		const internalCalls: CallDetails[] = [
+			{
+				metaData: { id: '1', title: 'Team Standup' },
+				parties: [
+					{
+						emailAddress: 'alice@internal.com',
+						affiliation: 'Internal',
+						name: 'Alice',
+					},
+				],
+			},
+		];
+		const result = filterByCustomerName(internalCalls, 'internal');
+		expect(result).toHaveLength(0);
+	});
+
+	it('returns empty when no match', () => {
+		const result = filterByCustomerName(calls, 'Nonexistent');
+		expect(result).toHaveLength(0);
+	});
+
+	it('handles calls with null context and parties', () => {
+		const sparse: CallDetails[] = [
+			{ metaData: { id: '1', title: null } },
+		];
+		const result = filterByCustomerName(sparse, 'anything');
+		expect(result).toHaveLength(0);
+	});
+});
+
+describe('filterByPrimaryUserEmails', () => {
+	const calls: CallDetails[] = [
+		{
+			metaData: { id: '1', title: 'Hosted by Alice', primaryUserId: '100' },
+			parties: [
+				{
+					userId: '100',
+					emailAddress: 'alice@example.com',
+					name: 'Alice',
+				},
+				{
+					userId: '200',
+					emailAddress: 'bob@example.com',
+					name: 'Bob',
+				},
+			],
+		},
+		{
+			metaData: { id: '2', title: 'Hosted by Bob', primaryUserId: '200' },
+			parties: [
+				{
+					userId: '200',
+					emailAddress: 'bob@example.com',
+					name: 'Bob',
+				},
+			],
+		},
+		{
+			metaData: { id: '3', title: 'No primary user' },
+			parties: [
+				{
+					userId: '100',
+					emailAddress: 'alice@example.com',
+					name: 'Alice',
+				},
+			],
+		},
+		{
+			metaData: {
+				id: '4',
+				title: 'Primary not in parties',
+				primaryUserId: '999',
+			},
+			parties: [
+				{
+					userId: '100',
+					emailAddress: 'alice@example.com',
+					name: 'Alice',
+				},
+			],
+		},
+	];
+
+	it('matches when primary user email is in list', () => {
+		const result = filterByPrimaryUserEmails(calls, ['alice@example.com']);
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('1');
+	});
+
+	it('is case-insensitive', () => {
+		const result = filterByPrimaryUserEmails(calls, ['ALICE@EXAMPLE.COM']);
+		expect(result).toHaveLength(1);
+	});
+
+	it('excludes calls with no primaryUserId', () => {
+		const result = filterByPrimaryUserEmails(calls, ['alice@example.com']);
+		expect(result.every((c) => c.metaData.id !== '3')).toBe(true);
+	});
+
+	it('excludes calls where primary user is not in parties', () => {
+		const result = filterByPrimaryUserEmails(calls, ['alice@example.com']);
+		expect(result.every((c) => c.metaData.id !== '4')).toBe(true);
+	});
+
+	it('returns empty when no email matches', () => {
+		const result = filterByPrimaryUserEmails(calls, ['nobody@example.com']);
+		expect(result).toHaveLength(0);
+	});
+});
+
+describe('filterByTrackers', () => {
+	const calls: CallDetails[] = [
+		{
+			metaData: { id: '1', title: 'Call 1' },
+			content: {
+				trackers: [
+					{ id: 't1', name: 'Competitors', count: 3 },
+					{ id: 't2', name: 'Pricing', count: 0 },
+				],
+			},
+		},
+		{
+			metaData: { id: '2', title: 'Call 2' },
+			content: {
+				trackers: [{ id: 't3', name: 'Pain points (tracker)', count: 2 }],
+			},
+		},
+		{
+			metaData: { id: '3', title: 'Call 3' },
+			content: { trackers: [] },
+		},
+		{
+			metaData: { id: '4', title: 'Call 4' },
+		},
+	];
+
+	it('matches tracker name by case-insensitive substring', () => {
+		const result = filterByTrackers(calls, ['competitor']);
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('1');
+	});
+
+	it('requires count > 0', () => {
+		// Pricing exists on Call 1 but with count 0 — should not match
+		const result = filterByTrackers(calls, ['pricing']);
+		expect(result).toHaveLength(0);
+	});
+
+	it('matches any of multiple tracker names (OR)', () => {
+		const result = filterByTrackers(calls, ['competitor', 'pain']);
+		expect(result).toHaveLength(2);
+	});
+
+	it('returns empty when no match', () => {
+		const result = filterByTrackers(calls, ['nonexistent']);
+		expect(result).toHaveLength(0);
+	});
+
+	it('handles calls with no content or trackers', () => {
+		const result = filterByTrackers(calls, ['competitor']);
+		// Calls 3 and 4 have no/empty trackers — should be excluded
+		expect(result.every((c) => c.metaData.id === '1')).toBe(true);
+	});
+});
+
+describe('searchCallsAll with trackers filter', () => {
+	let client: GongClient;
+	let fetchMock: ReturnType<typeof vi.fn>;
+
+	beforeEach(() => {
+		fetchMock = vi.fn();
+		global.fetch = fetchMock;
+		client = new GongClient({
+			accessKey: 'test-key',
+			accessKeySecret: 'test-secret',
+		});
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('auto-enables trackers in contentSelector when trackers filter is set', async () => {
+		const mockResponse: CallDetailsResponse = {
+			requestId: 'test',
+			records: {
+				totalRecords: 0,
+				currentPageSize: 0,
+				currentPageNumber: 0,
+			},
+			calls: [],
+		};
+
+		fetchMock.mockResolvedValueOnce({
+			ok: true,
+			json: async () => mockResponse,
+		});
+
+		await client.searchCallsAll({ trackers: ['Competitors'] });
+
+		const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+		expect(body.contentSelector.exposedFields.content.trackers).toBe(true);
+	});
+
+	it('does not duplicate trackers in include when already present', async () => {
+		const mockResponse: CallDetailsResponse = {
+			requestId: 'test',
+			records: {
+				totalRecords: 0,
+				currentPageSize: 0,
+				currentPageNumber: 0,
+			},
+			calls: [],
+		};
+
+		fetchMock.mockResolvedValueOnce({
+			ok: true,
+			json: async () => mockResponse,
+		});
+
+		await client.searchCallsAll({
+			trackers: ['Competitors'],
+			include: ['trackers', 'keyPoints'],
+		});
+
+		const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+		expect(body.contentSelector.exposedFields.content.trackers).toBe(true);
+		expect(body.contentSelector.exposedFields.content.keyPoints).toBe(true);
+	});
+
+	it('auto-enables extended context when customerName filter is set', async () => {
+		const mockResponse: CallDetailsResponse = {
+			requestId: 'test',
+			records: {
+				totalRecords: 0,
+				currentPageSize: 0,
+				currentPageNumber: 0,
+			},
+			calls: [],
+		};
+
+		fetchMock.mockResolvedValueOnce({
+			ok: true,
+			json: async () => mockResponse,
+		});
+
+		await client.searchCallsAll({ customerName: 'Acme' });
+
+		const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+		expect(body.contentSelector.context).toBe('Extended');
+	});
+
+	it('does not duplicate context when customerName and include context are both set', async () => {
+		const mockResponse: CallDetailsResponse = {
+			requestId: 'test',
+			records: {
+				totalRecords: 0,
+				currentPageSize: 0,
+				currentPageNumber: 0,
+			},
+			calls: [],
+		};
+
+		fetchMock.mockResolvedValueOnce({
+			ok: true,
+			json: async () => mockResponse,
+		});
+
+		await client.searchCallsAll({
+			customerName: 'Acme',
+			include: ['context', 'keyPoints'],
+		});
+
+		const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+		expect(body.contentSelector.context).toBe('Extended');
+		expect(body.contentSelector.exposedFields.content.keyPoints).toBe(true);
+	});
+});
+
+describe('filterByScope', () => {
+	const calls: CallDetails[] = [
+		{ metaData: { id: '1', title: 'External call', scope: 'External' } },
+		{ metaData: { id: '2', title: 'Internal call', scope: 'Internal' } },
+		{ metaData: { id: '3', title: 'Unknown scope', scope: 'Unknown' } },
+		{ metaData: { id: '4', title: 'No scope' } },
+	];
+
+	it('matches External scope exactly', () => {
+		const result = filterByScope(calls, 'External');
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('1');
+	});
+
+	it('matches Internal scope exactly', () => {
+		const result = filterByScope(calls, 'Internal');
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('2');
+	});
+
+	it('excludes calls with null/missing scope', () => {
+		const result = filterByScope(calls, 'External');
+		expect(result.every((c) => c.metaData.id !== '4')).toBe(true);
+	});
+});
+
+describe('filterByMinDuration', () => {
+	const calls: CallDetails[] = [
+		{ metaData: { id: '1', title: 'Short', duration: 120 } },
+		{ metaData: { id: '2', title: 'Medium', duration: 600 } },
+		{ metaData: { id: '3', title: 'Long', duration: 3600 } },
+		{ metaData: { id: '4', title: 'No duration' } },
+	];
+
+	it('includes calls meeting or exceeding the minimum', () => {
+		const result = filterByMinDuration(calls, 600);
+		expect(result).toHaveLength(2);
+		expect(result.map((c) => c.metaData.id).sort()).toEqual(['2', '3']);
+	});
+
+	it('excludes shorter calls', () => {
+		const result = filterByMinDuration(calls, 600);
+		expect(result.every((c) => c.metaData.id !== '1')).toBe(true);
+	});
+
+	it('excludes calls with null/missing duration', () => {
+		const result = filterByMinDuration(calls, 0);
+		expect(result.every((c) => c.metaData.id !== '4')).toBe(true);
+	});
+
+	it('handles zero minimum', () => {
+		const result = filterByMinDuration(calls, 0);
+		expect(result).toHaveLength(3);
+	});
+});
+
+describe('filterByExcludeParticipantUserIds', () => {
+	const calls: CallDetails[] = [
+		{
+			metaData: { id: '1', title: 'With Alice' },
+			parties: [
+				{ userId: '100', name: 'Alice' },
+				{ userId: '200', name: 'Bob' },
+			],
+		},
+		{
+			metaData: { id: '2', title: 'Without Alice' },
+			parties: [
+				{ userId: '300', name: 'Charlie' },
+				{ userId: '200', name: 'Bob' },
+			],
+		},
+		{
+			metaData: { id: '3', title: 'No parties' },
+		},
+	];
+
+	it('removes calls where excluded user is a participant', () => {
+		const result = filterByExcludeParticipantUserIds(calls, ['100']);
+		expect(result.every((c) => c.metaData.id !== '1')).toBe(true);
+	});
+
+	it('keeps calls that do not include the excluded user', () => {
+		const result = filterByExcludeParticipantUserIds(calls, ['100']);
+		expect(result.some((c) => c.metaData.id === '2')).toBe(true);
+	});
+
+	it('keeps calls with null parties (no excluded participant to match)', () => {
+		const result = filterByExcludeParticipantUserIds(calls, ['100']);
+		expect(result.some((c) => c.metaData.id === '3')).toBe(true);
+	});
+
+	it('handles multiple excluded IDs', () => {
+		const result = filterByExcludeParticipantUserIds(calls, ['100', '300']);
+		// Excludes call 1 (Alice) and call 2 (Charlie); only call 3 remains
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('3');
+	});
+});
+
+describe('filterByMaxDuration', () => {
+	const calls: CallDetails[] = [
+		{ metaData: { id: '1', title: 'Short', duration: 120 } },
+		{ metaData: { id: '2', title: 'Medium', duration: 600 } },
+		{ metaData: { id: '3', title: 'Long', duration: 3600 } },
+		{ metaData: { id: '4', title: 'No duration' } },
+	];
+
+	it('includes calls at or under the maximum', () => {
+		const result = filterByMaxDuration(calls, 600);
+		expect(result.map((c) => c.metaData.id).sort()).toEqual(['1', '2']);
+	});
+
+	it('excludes calls with null duration', () => {
+		const result = filterByMaxDuration(calls, 9999);
+		expect(result.every((c) => c.metaData.id !== '4')).toBe(true);
+	});
+});
+
+describe('filterByDirection', () => {
+	const calls: CallDetails[] = [
+		{ metaData: { id: '1', title: 'a', direction: 'Inbound' } },
+		{ metaData: { id: '2', title: 'b', direction: 'Outbound' } },
+		{ metaData: { id: '3', title: 'c', direction: 'Conference' } },
+		{ metaData: { id: '4', title: 'd' } },
+	];
+
+	it('matches direction exactly', () => {
+		const result = filterByDirection(calls, 'Outbound');
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('2');
+	});
+
+	it('excludes calls with null direction', () => {
+		const result = filterByDirection(calls, 'Inbound');
+		expect(result.every((c) => c.metaData.id !== '4')).toBe(true);
+	});
+});
+
+describe('filterBySystem', () => {
+	const calls: CallDetails[] = [
+		{ metaData: { id: '1', title: 'a', system: 'Zoom' } },
+		{ metaData: { id: '2', title: 'b', system: 'Google Meet' } },
+		{ metaData: { id: '3', title: 'c', system: 'Microsoft Teams' } },
+		{ metaData: { id: '4', title: 'd' } },
+	];
+
+	it('matches case-insensitive substring', () => {
+		const result = filterBySystem(calls, 'zoom');
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('1');
+	});
+
+	it('matches multi-word system by partial', () => {
+		const result = filterBySystem(calls, 'Meet');
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('2');
+	});
+
+	it('excludes calls with null system', () => {
+		const result = filterBySystem(calls, 'zoom');
+		expect(result.every((c) => c.metaData.id !== '4')).toBe(true);
+	});
+});
+
+describe('filterByLanguage', () => {
+	const calls: CallDetails[] = [
+		{ metaData: { id: '1', title: 'a', language: 'eng' } },
+		{ metaData: { id: '2', title: 'b', language: 'jpn' } },
+		{ metaData: { id: '3', title: 'c' } },
+	];
+
+	it('matches case-insensitive exact code', () => {
+		const result = filterByLanguage(calls, 'ENG');
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('1');
+	});
+
+	it('does not match partial codes', () => {
+		const result = filterByLanguage(calls, 'en');
+		expect(result).toHaveLength(0);
+	});
+
+	it('excludes calls with null language', () => {
+		const result = filterByLanguage(calls, 'eng');
+		expect(result.every((c) => c.metaData.id !== '3')).toBe(true);
+	});
+});
+
+describe('filterByTitleContains', () => {
+	const calls: CallDetails[] = [
+		{ metaData: { id: '1', title: 'Kickoff with Customer' } },
+		{ metaData: { id: '2', title: 'Weekly Review' } },
+		{ metaData: { id: '3', title: null } },
+	];
+
+	it('matches case-insensitive substring', () => {
+		const result = filterByTitleContains(calls, 'kickoff');
+		expect(result).toHaveLength(1);
+		expect(result[0].metaData.id).toBe('1');
+	});
+
+	it('returns empty when no match', () => {
+		const result = filterByTitleContains(calls, 'nonexistent');
+		expect(result).toHaveLength(0);
+	});
+
+	it('excludes calls with null title', () => {
+		const result = filterByTitleContains(calls, 'anything');
+		expect(result.every((c) => c.metaData.id !== '3')).toBe(true);
+	});
+});
+
+describe('filterByExcludeParticipantEmails', () => {
+	const calls: CallDetails[] = [
+		{
+			metaData: { id: '1', title: 'With Alice' },
+			parties: [
+				{ emailAddress: 'alice@example.com', name: 'Alice' },
+				{ emailAddress: 'bob@example.com', name: 'Bob' },
+			],
+		},
+		{
+			metaData: { id: '2', title: 'Without Alice' },
+			parties: [{ emailAddress: 'bob@example.com', name: 'Bob' }],
+		},
+		{
+			metaData: { id: '3', title: 'No parties' },
+		},
+	];
+
+	it('removes calls where excluded email is a participant', () => {
+		const result = filterByExcludeParticipantEmails(calls, [
+			'alice@example.com',
+		]);
+		expect(result.every((c) => c.metaData.id !== '1')).toBe(true);
+	});
+
+	it('matches case-insensitively', () => {
+		const result = filterByExcludeParticipantEmails(calls, [
+			'ALICE@EXAMPLE.COM',
+		]);
+		expect(result.every((c) => c.metaData.id !== '1')).toBe(true);
+	});
+
+	it('keeps calls that do not include the excluded email', () => {
+		const result = filterByExcludeParticipantEmails(calls, [
+			'alice@example.com',
+		]);
+		expect(result.some((c) => c.metaData.id === '2')).toBe(true);
+	});
+
+	it('keeps calls with null parties', () => {
+		const result = filterByExcludeParticipantEmails(calls, [
+			'alice@example.com',
+		]);
+		expect(result.some((c) => c.metaData.id === '3')).toBe(true);
+	});
+});
+
+describe('filterByExcludePrimaryUserIds', () => {
+	const calls: CallDetails[] = [
+		{ metaData: { id: '1', title: 'Hosted by 100', primaryUserId: '100' } },
+		{ metaData: { id: '2', title: 'Hosted by 200', primaryUserId: '200' } },
+		{ metaData: { id: '3', title: 'No primary user' } },
+	];
+
+	it('removes calls hosted by excluded user', () => {
+		const result = filterByExcludePrimaryUserIds(calls, ['100']);
+		expect(result.every((c) => c.metaData.id !== '1')).toBe(true);
+	});
+
+	it('keeps calls hosted by other users', () => {
+		const result = filterByExcludePrimaryUserIds(calls, ['100']);
+		expect(result.some((c) => c.metaData.id === '2')).toBe(true);
+	});
+
+	it('keeps calls without primaryUserId', () => {
+		const result = filterByExcludePrimaryUserIds(calls, ['100']);
+		expect(result.some((c) => c.metaData.id === '3')).toBe(true);
 	});
 });

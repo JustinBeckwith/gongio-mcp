@@ -39,8 +39,23 @@ describe('MCP Server - search_calls tool', () => {
 				toDateTime: '2024-01-31T23:59:59Z',
 				workspaceId: '999',
 				primaryUserIds: ['111', '222'],
+				primaryUserEmails: ['host@example.com'],
+				excludePrimaryUserIds: ['999'],
 				callIds: ['123', '456'],
-				cursor: 'some-cursor',
+				participantUserIds: ['333', '444'],
+				excludeParticipantUserIds: ['555'],
+				participantEmails: ['user@example.com'],
+				excludeParticipantEmails: ['exclude@example.com'],
+				customerName: 'Acme',
+				titleContains: 'kickoff',
+				trackers: ['Competitors'],
+				scope: 'External',
+				direction: 'Conference',
+				system: 'Zoom',
+				language: 'eng',
+				minDuration: 600,
+				maxDuration: 3600,
+				include: ['keyPoints', 'trackers'],
 			});
 			expect(result.success).toBe(true);
 		});
@@ -122,14 +137,63 @@ describe('MCP Server - search_calls tool', () => {
 			expect(validated.callIds).toHaveLength(2);
 		});
 
-		it('validates and processes search request with cursor', () => {
-			const args = {
-				cursor: 'next-page-cursor-value',
-			};
+		it('accepts participantUserIds array', () => {
+			const result = searchCallsRequestSchema.safeParse({
+				participantUserIds: ['111', '222'],
+			});
+			expect(result.success).toBe(true);
+			if (result.success) {
+				expect(result.data.participantUserIds).toHaveLength(2);
+			}
+		});
 
-			const validated = searchCallsRequestSchema.parse(args);
+		it('accepts participantEmails array', () => {
+			const result = searchCallsRequestSchema.safeParse({
+				participantEmails: ['nick@example.com', 'jane@example.com'],
+			});
+			expect(result.success).toBe(true);
+		});
 
-			expect(validated.cursor).toBe('next-page-cursor-value');
+		it('rejects invalid participantEmails', () => {
+			const result = searchCallsRequestSchema.safeParse({
+				participantEmails: ['not-an-email'],
+			});
+			expect(result.success).toBe(false);
+		});
+
+		it('accepts customerName string', () => {
+			const result = searchCallsRequestSchema.safeParse({
+				customerName: 'Acme Corp',
+			});
+			expect(result.success).toBe(true);
+		});
+
+		it('rejects empty customerName', () => {
+			const result = searchCallsRequestSchema.safeParse({
+				customerName: '',
+			});
+			expect(result.success).toBe(false);
+		});
+
+		it('accepts valid include values', () => {
+			const result = searchCallsRequestSchema.safeParse({
+				include: ['keyPoints', 'trackers', 'highlights', 'speakers'],
+			});
+			expect(result.success).toBe(true);
+		});
+
+		it('rejects invalid include values', () => {
+			const result = searchCallsRequestSchema.safeParse({
+				include: ['invalid'],
+			});
+			expect(result.success).toBe(false);
+		});
+
+		it('rejects invalid participantUserIds format', () => {
+			const result = searchCallsRequestSchema.safeParse({
+				participantUserIds: ['not-numeric'],
+			});
+			expect(result.success).toBe(false);
 		});
 
 		it('handles undefined args by defaulting to empty object', () => {

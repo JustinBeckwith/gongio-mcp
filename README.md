@@ -15,7 +15,7 @@ An MCP (Model Context Protocol) server that provides access to your Gong.io data
 | [`get_call`](#get_call) | Get metadata for a specific call |
 | [`get_call_summary`](#get_call_summary) | AI summary: key points, topics, action items |
 | [`get_call_transcript`](#get_call_transcript) | Full speaker-attributed transcript (paginated) |
-| [`search_calls`](#search_calls) | Advanced call search by host, ID, date range |
+| [`search_calls`](#search_calls) | Rich call search — participant, customer, tracker, scope, duration, title, and more |
 | [`search_calls_by_account`](#search_calls_by_account) | Find calls involving a specific account/company by email domain |
 | [`search_calls_by_opportunity`](#search_calls_by_opportunity) | Find calls linked to specific CRM Opportunities |
 | [`search_transcripts`](#search_transcripts) | Free-text keyword search across transcript sentences |
@@ -26,6 +26,29 @@ An MCP (Model Context Protocol) server that provides access to your Gong.io data
 | [`get_user`](#get_user) | Get a specific user's profile |
 | [`search_users`](#search_users) | Search/filter users by IDs or creation date |
 | [`list_users`](#list_users) | List all workspace users |
+
+
+## Response Size & Context Limits
+
+`search_calls` can return a lot of data. Under the hood it:
+
+- Auto-paginates up to **~5000 calls** (50 API pages) per query
+- Applies client-side filters (participant, customer, tracker, duration, etc.) after pagination
+- Returns a rich per-call format (metadata + summary + topics + participants) by default
+
+**Guardrails built in:**
+
+- If the formatted output would exceed **`MAX_MCP_OUTPUT_LENGTH`** (default `50000` chars, configurable via env var), the tool **automatically falls back to a compact table** with a warning. You still get every call ID and title — drill in with `get_call_summary` on specific ones.
+- `include: ["outline"]` is **expensive** (~80KB per call). Avoid it in multi-call searches.
+- Tracker data is filtered to only show trackers matching your `trackers` filter (or non-zero trackers if no filter) — no more walls of `(0x)` noise.
+
+**If your query hits the output cap, narrow it:**
+
+1. Tighten `fromDateTime` / `toDateTime`
+2. Add `scope: "External"` or `scope: "Internal"`
+3. Add `minDuration: 600` to skip short no-shows
+4. Add `customerName` or `trackers` filter
+5. Drop heavy `include` options like `outline`
 
 ## Prerequisites
 
@@ -223,18 +246,80 @@ Get the raw transcript with speaker attribution. Transcripts are paginated (defa
 <details>
 <summary><code>search_calls</code> — Advanced call search</summary>
 
-Search calls with advanced filters. More flexible than `list_calls` for targeted queries.
+Search calls with advanced filters including participant lookup, customer name search, and rich content selection. Automatically paginates through all results and returns participant info, brief summary, and topics by default.
 
 **Parameters:**
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `fromDateTime` | No | Start date in ISO 8601 format |
-| `toDateTime` | No | End date in ISO 8601 format |
-| `workspaceId` | No | Filter by workspace ID (use `list_workspaces` to find IDs) |
-| `primaryUserIds` | No | Array of user IDs to filter by call host |
-| `callIds` | No | Array of specific call IDs to retrieve |
-| `cursor` | No | Pagination cursor |
+*Date & workspace*
+
+| Parameter | Description |
+|-----------|-------------|
+| `fromDateTime` | Start date in ISO 8601 format |
+| `toDateTime` | End date in ISO 8601 format |
+| `workspaceId` | Filter by workspace ID (use `list_workspaces` to find IDs) |
+| `callIds` | Array of specific call IDs to retrieve |
+
+*Host / participant*
+
+| Parameter | Description |
+|-----------|-------------|
+| `primaryUserIds` | Host user IDs (server-side) |
+| `primaryUserEmails` | Host emails (case-insensitive) |
+| `excludePrimaryUserIds` | Exclude these host user IDs |
+| `participantUserIds` | Any participant (host/attendee/invitee) user IDs |
+| `excludeParticipantUserIds` | Exclude calls where any participant has these user IDs |
+| `participantEmails` | Any participant emails (case-insensitive) |
+| `excludeParticipantEmails` | Exclude calls where any participant has these emails |
+
+*Content & customer*
+
+| Parameter | Description |
+|-----------|-------------|
+| `customerName` | Fuzzy match against CRM account name, external email domains, and titles |
+| `titleContains` | Substring match on call title (case-insensitive) |
+| `trackers` | Calls where matching tracker(s) fired (count > 0). Workspace-specific — use `get_trackers` to discover |
+
+*Metadata*
+
+| Parameter | Description |
+|-----------|-------------|
+| `scope` | `External`, `Internal`, or `Unknown` |
+| `direction` | `Inbound`, `Outbound`, `Conference`, or `Unknown` |
+| `system` | Conferencing platform (e.g., `Zoom`) — case-insensitive substring |
+| `language` | Language code (e.g., `eng`) — case-insensitive exact match |
+| `minDuration` | Minimum duration in seconds |
+| `maxDuration` | Maximum duration in seconds |
+
+*Response shape*
+
+| Parameter | Description |
+|-----------|-------------|
+| `include` | Additional data to return — see table below |
+
+**`include` options:**
+
+| Value | What it adds | Size |
+|-------|-------------|------|
+| `keyPoints` | AI-extracted key points as bullets | ~5KB/call |
+| `trackers` | Keyword/smart tracker hits with counts | ~3KB/call |
+| `highlights` | AI-curated highlight clips grouped by theme | ~3KB/call |
+| `speakers` | Talk time per participant | ~1KB/call |
+| `comments` | Public comments left on the call | varies |
+| `context` | CRM account/opportunity linkage (HubSpot, Salesforce) | ~1KB/call |
+| `outline` | Full section-by-section outline with items | **~80KB/call (large)** |
+| `media` | Audio/video URLs (valid 8 hours) | ~3KB/call |
+
+Defaults (always returned): participants, brief summary, and topics — ~3KB per call.
+
+**Filter behavior notes:**
+
+- Filters combine with **AND** logic. `primaryUserIds` + `participantUserIds` compose: primary narrows server-side, participant post-filters.
+- `customerName` matches any of: CRM account Name field, external participant email domain, or call title (case-insensitive substring).
+- `trackers` names are **workspace-specific** — call `get_trackers` first to see what's configured. Match is case-insensitive substring (so `"competitor"` matches both `"Competitors"` and `"Competitor Mentions"`).
+- When `trackers` filter is set, the relevant tracker content is auto-included and the output shows only the trackers you asked about. Without a filter, only non-zero trackers are shown.
+- An empty result returns `"No calls found"` rather than an error.
+
+See [Response Size & Context Limits](#response-size--context-limits) for how large-result fallback works.
 
 </details>
 

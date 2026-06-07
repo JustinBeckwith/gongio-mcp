@@ -4,6 +4,7 @@
  */
 
 import {
+	type CallDetails,
 	type CallDetailsResponse,
 	type CallsResponse,
 	type CallTranscriptMatches,
@@ -39,6 +40,327 @@ import {
 } from './schemas.js';
 
 const GONG_API_BASE = 'https://api.gong.io/v2';
+
+/**
+ * Build a contentSelector object for the Gong API calls/extensive endpoint.
+ * Always includes parties, brief, and topics as defaults.
+ * The include array adds additional content fields.
+ */
+export function buildContentSelector(
+	include?: string[],
+): Record<string, unknown> {
+	const content: Record<string, boolean> = { brief: true, topics: true };
+	const exposedFields: Record<string, unknown> = { parties: true, content };
+	const selector: Record<string, unknown> = { exposedFields };
+
+	if (!include) return selector;
+
+	for (const item of include) {
+		switch (item) {
+			case 'keyPoints':
+				content.keyPoints = true;
+				break;
+			case 'trackers':
+				content.trackers = true;
+				break;
+			case 'highlights':
+				content.highlights = true;
+				break;
+			case 'outline':
+				content.outline = true;
+				break;
+			case 'speakers': {
+				const interaction =
+					(exposedFields.interaction as Record<string, boolean>) ?? {};
+				interaction.speakers = true;
+				exposedFields.interaction = interaction;
+				break;
+			}
+			case 'comments':
+				exposedFields.collaboration = { publicComments: true };
+				break;
+			case 'context':
+				selector.context = 'Extended';
+				break;
+			case 'media':
+				exposedFields.media = true;
+				break;
+		}
+	}
+	return selector;
+}
+
+export const MAX_SEARCH_PAGES = 50;
+
+/**
+ * Detect Gong's "no results" 404 so callers can return an empty response
+ * instead of surfacing it as an error.
+ */
+function isNoCallsFoundError(message: string): boolean {
+	return (
+		message.includes('404') &&
+		message.includes('No calls found corresponding to the provided filters')
+	);
+}
+
+/**
+ * Filter calls to those where any participant has a matching userId.
+ */
+export function filterByParticipantUserIds(
+	calls: CallDetails[],
+	userIds: string[],
+): CallDetails[] {
+	const idSet = new Set(userIds);
+	return calls.filter((call) =>
+		call.parties?.some((p) => p.userId && idSet.has(p.userId)),
+	);
+}
+
+/**
+ * Filter calls to those hosted by a user whose email matches the provided list.
+ * Looks up the primary user inside the parties array by matching primaryUserId,
+ * then compares the email case-insensitively.
+ */
+export function filterByPrimaryUserEmails(
+	calls: CallDetails[],
+	emails: string[],
+): CallDetails[] {
+	const emailSet = new Set(emails.map((e) => e.toLowerCase()));
+	return calls.filter((call) => {
+		const primaryId = call.metaData.primaryUserId;
+		if (!primaryId) return false;
+		const primary = call.parties?.find((p) => p.userId === primaryId);
+		if (!primary?.emailAddress) return false;
+		return emailSet.has(primary.emailAddress.toLowerCase());
+	});
+}
+
+/**
+ * Filter out calls where any participant has a userId in the excluded set.
+ * Calls with no parties are kept (no excluded participant, so no match).
+ */
+export function filterByExcludeParticipantUserIds(
+	calls: CallDetails[],
+	userIds: string[],
+): CallDetails[] {
+	const idSet = new Set(userIds);
+	return calls.filter(
+		(call) =>
+			!call.parties?.some((p) => p.userId && idSet.has(p.userId)),
+	);
+}
+
+/**
+ * Filter out calls where any participant has an email in the excluded set.
+ * Comparison is case-insensitive. Calls with no parties are kept.
+ */
+export function filterByExcludeParticipantEmails(
+	calls: CallDetails[],
+	emails: string[],
+): CallDetails[] {
+	const emailSet = new Set(emails.map((e) => e.toLowerCase()));
+	return calls.filter(
+		(call) =>
+			!call.parties?.some(
+				(p) =>
+					p.emailAddress &&
+					emailSet.has(p.emailAddress.toLowerCase()),
+			),
+	);
+}
+
+/**
+ * Filter out calls whose primaryUserId is in the excluded set.
+ * Calls with no primaryUserId are kept (nothing to match against).
+ */
+export function filterByExcludePrimaryUserIds(
+	calls: CallDetails[],
+	userIds: string[],
+): CallDetails[] {
+	const idSet = new Set(userIds);
+	return calls.filter((call) => {
+		const primaryId = call.metaData.primaryUserId;
+		return !primaryId || !idSet.has(primaryId);
+	});
+}
+
+/**
+ * Filter calls to those where any participant has a matching email address.
+ * Comparison is case-insensitive.
+ */
+export function filterByParticipantEmails(
+	calls: CallDetails[],
+	emails: string[],
+): CallDetails[] {
+	const emailSet = new Set(emails.map((e) => e.toLowerCase()));
+	return calls.filter((call) =>
+		call.parties?.some(
+			(p) => p.emailAddress && emailSet.has(p.emailAddress.toLowerCase()),
+		),
+	);
+}
+
+/**
+ * Filter calls by scope (Internal, External, Unknown).
+ * Calls with null/missing scope are excluded.
+ */
+export function filterByScope(
+	calls: CallDetails[],
+	scope: string,
+): CallDetails[] {
+	return calls.filter((call) => call.metaData.scope === scope);
+}
+
+/**
+ * Filter calls by minimum duration in seconds.
+ * Calls with null/missing duration are excluded.
+ */
+export function filterByMinDuration(
+	calls: CallDetails[],
+	minSeconds: number,
+): CallDetails[] {
+	return calls.filter(
+		(call) =>
+			typeof call.metaData.duration === 'number' &&
+			call.metaData.duration >= minSeconds,
+	);
+}
+
+/**
+ * Filter calls by maximum duration in seconds.
+ * Calls with null/missing duration are excluded.
+ */
+export function filterByMaxDuration(
+	calls: CallDetails[],
+	maxSeconds: number,
+): CallDetails[] {
+	return calls.filter(
+		(call) =>
+			typeof call.metaData.duration === 'number' &&
+			call.metaData.duration <= maxSeconds,
+	);
+}
+
+/**
+ * Filter calls by direction (Inbound, Outbound, Conference, Unknown).
+ * Calls with null/missing direction are excluded.
+ */
+export function filterByDirection(
+	calls: CallDetails[],
+	direction: string,
+): CallDetails[] {
+	return calls.filter((call) => call.metaData.direction === direction);
+}
+
+/**
+ * Filter calls by conferencing system (e.g., "Zoom", "Google Meet").
+ * Case-insensitive substring match. Calls with null/missing system excluded.
+ */
+export function filterBySystem(
+	calls: CallDetails[],
+	system: string,
+): CallDetails[] {
+	const needle = system.toLowerCase();
+	return calls.filter((call) =>
+		call.metaData.system?.toLowerCase().includes(needle),
+	);
+}
+
+/**
+ * Filter calls by language code (e.g., "eng", "jpn").
+ * Case-insensitive exact match. Calls with null/missing language excluded.
+ */
+export function filterByLanguage(
+	calls: CallDetails[],
+	language: string,
+): CallDetails[] {
+	const target = language.toLowerCase();
+	return calls.filter(
+		(call) => call.metaData.language?.toLowerCase() === target,
+	);
+}
+
+/**
+ * Filter calls whose title contains the given substring (case-insensitive).
+ * Calls with null/missing title are excluded.
+ */
+export function filterByTitleContains(
+	calls: CallDetails[],
+	needle: string,
+): CallDetails[] {
+	const target = needle.toLowerCase();
+	return calls.filter((call) =>
+		call.metaData.title?.toLowerCase().includes(target),
+	);
+}
+
+/**
+ * Filter calls to those where at least one named tracker fired (count > 0).
+ * Matches tracker names by case-insensitive substring. A call is included
+ * when any requested name matches any tracker with a non-zero count.
+ */
+export function filterByTrackers(
+	calls: CallDetails[],
+	trackerNames: string[],
+): CallDetails[] {
+	const needles = trackerNames.map((n) => n.toLowerCase());
+	return calls.filter((call) =>
+		call.content?.trackers?.some(
+			(t) =>
+				t.count > 0 &&
+				needles.some((needle) => t.name.toLowerCase().includes(needle)),
+		),
+	);
+}
+
+/**
+ * Filter calls by customer/account name.
+ * Case-insensitive substring match against:
+ * 1. CRM context Account Name fields
+ * 2. External participant email domains
+ * 3. Call title
+ */
+export function filterByCustomerName(
+	calls: CallDetails[],
+	name: string,
+): CallDetails[] {
+	const needle = name.toLowerCase();
+	return calls.filter((call) => {
+		// Check CRM context for Account Name
+		for (const ctx of call.context ?? []) {
+			for (const obj of ctx.objects ?? []) {
+				if (obj.objectType === 'Account') {
+					for (const field of obj.fields ?? []) {
+						if (
+							field.name.toLowerCase() === 'name' &&
+							typeof field.value === 'string' &&
+							field.value.toLowerCase().includes(needle)
+						) {
+							return true;
+						}
+					}
+				}
+			}
+		}
+
+		// Check external participant email domains
+		for (const party of call.parties ?? []) {
+			if (party.emailAddress && party.affiliation !== 'Internal') {
+				const domain = party.emailAddress.split('@')[1];
+				if (domain?.toLowerCase().includes(needle)) {
+					return true;
+				}
+			}
+		}
+
+		// Check call title
+		if (call.metaData.title?.toLowerCase().includes(needle)) {
+			return true;
+		}
+
+		return false;
+	});
+}
 
 export interface GongConfig {
 	accessKey: string;
@@ -202,8 +524,9 @@ export class GongClient {
 
 	/**
 	 * Search calls with advanced filters (POST /v2/calls/extensive)
-	 * Supports filtering by date range, workspace, primary users (hosts), and specific call IDs
-	 * Returns minimal call metadata (same format as listCalls)
+	 * Supports filtering by date range, workspace, primary users (hosts), and specific call IDs.
+	 * Always includes parties, brief, and topics in the response.
+	 * Use the include parameter to request additional content fields.
 	 */
 	async searchCalls(options: {
 		fromDateTime?: string;
@@ -211,6 +534,7 @@ export class GongClient {
 		workspaceId?: string;
 		primaryUserIds?: string[];
 		callIds?: string[];
+		include?: string[];
 		cursor?: string;
 	}): Promise<CallDetailsResponse> {
 		// Build filter object
@@ -232,19 +556,198 @@ export class GongClient {
 			filter.callIds = options.callIds;
 		}
 
-		// Build request body according to Gong API docs
 		const body: Record<string, unknown> = {
 			filter,
-			// Omit contentSelector to get minimal fields (just metadata)
-			// The API returns only metaData by default when contentSelector is not specified
+			contentSelector: buildContentSelector(options.include),
 		};
 
 		if (options.cursor) {
 			body.cursor = options.cursor;
 		}
 
-		const response = await this.request('POST', '/calls/extensive', body);
-		return parseCallDetailsResponse(response);
+		try {
+			const response = await this.request(
+				'POST',
+				'/calls/extensive',
+				body,
+			);
+			return parseCallDetailsResponse(response);
+		} catch (err) {
+			// Gong's calls/extensive returns 404 with "No calls found corresponding
+			// to the provided filters" when the filters match zero calls. Translate
+			// that to an empty response so callers don't have to special-case it.
+			if (err instanceof Error && isNoCallsFoundError(err.message)) {
+				return {
+					requestId: '',
+					records: {
+						totalRecords: 0,
+						currentPageSize: 0,
+						currentPageNumber: 0,
+					},
+					calls: [],
+				};
+			}
+			throw err;
+		}
+	}
+
+	/**
+	 * Fetch all pages of search results via auto-pagination.
+	 * Returns accumulated calls and the total count before any client-side filtering.
+	 */
+	async searchCallsAll(options: {
+		fromDateTime?: string;
+		toDateTime?: string;
+		workspaceId?: string;
+		primaryUserIds?: string[];
+		callIds?: string[];
+		include?: string[];
+		primaryUserEmails?: string[];
+		excludePrimaryUserIds?: string[];
+		participantUserIds?: string[];
+		excludeParticipantUserIds?: string[];
+		participantEmails?: string[];
+		excludeParticipantEmails?: string[];
+		customerName?: string;
+		titleContains?: string;
+		trackers?: string[];
+		scope?: string;
+		direction?: string;
+		system?: string;
+		language?: string;
+		minDuration?: number;
+		maxDuration?: number;
+	}): Promise<{ response: CallDetailsResponse; totalBeforeFilter: number }> {
+		const allCalls: CallDetails[] = [];
+		let cursor: string | undefined;
+		let pageCount = 0;
+		let requestId = '';
+
+		// Auto-enable fields required by client-side filters whose predicates
+		// depend on optional Gong response sections.
+		const requiredInclude = [
+			...(options.include ?? []),
+			...(options.trackers && options.trackers.length > 0 ? ['trackers'] : []),
+			...(options.customerName ? ['context'] : []),
+		];
+		const include =
+			requiredInclude.length > 0
+				? Array.from(new Set(requiredInclude))
+				: undefined;
+
+		// Only pass server-side filter options to the API
+		const apiOptions = {
+			fromDateTime: options.fromDateTime,
+			toDateTime: options.toDateTime,
+			workspaceId: options.workspaceId,
+			primaryUserIds: options.primaryUserIds,
+			callIds: options.callIds,
+			include,
+		};
+
+		do {
+			const page = await this.searchCalls({ ...apiOptions, cursor });
+			allCalls.push(...page.calls);
+			cursor = page.records.cursor;
+			requestId = page.requestId;
+			pageCount++;
+		} while (cursor && pageCount < MAX_SEARCH_PAGES);
+
+		if (pageCount >= MAX_SEARCH_PAGES && cursor) {
+			console.error(
+				`search_calls: reached max page limit (${MAX_SEARCH_PAGES}), returning partial results`,
+			);
+		}
+
+		const totalBeforeFilter = allCalls.length;
+
+		// Apply client-side filters
+		let filtered = allCalls;
+		if (options.primaryUserEmails && options.primaryUserEmails.length > 0) {
+			filtered = filterByPrimaryUserEmails(
+				filtered,
+				options.primaryUserEmails,
+			);
+		}
+		if (
+			options.excludePrimaryUserIds &&
+			options.excludePrimaryUserIds.length > 0
+		) {
+			filtered = filterByExcludePrimaryUserIds(
+				filtered,
+				options.excludePrimaryUserIds,
+			);
+		}
+		if (options.participantUserIds && options.participantUserIds.length > 0) {
+			filtered = filterByParticipantUserIds(
+				filtered,
+				options.participantUserIds,
+			);
+		}
+		if (
+			options.excludeParticipantUserIds &&
+			options.excludeParticipantUserIds.length > 0
+		) {
+			filtered = filterByExcludeParticipantUserIds(
+				filtered,
+				options.excludeParticipantUserIds,
+			);
+		}
+		if (options.participantEmails && options.participantEmails.length > 0) {
+			filtered = filterByParticipantEmails(
+				filtered,
+				options.participantEmails,
+			);
+		}
+		if (
+			options.excludeParticipantEmails &&
+			options.excludeParticipantEmails.length > 0
+		) {
+			filtered = filterByExcludeParticipantEmails(
+				filtered,
+				options.excludeParticipantEmails,
+			);
+		}
+		if (options.customerName) {
+			filtered = filterByCustomerName(filtered, options.customerName);
+		}
+		if (options.trackers && options.trackers.length > 0) {
+			filtered = filterByTrackers(filtered, options.trackers);
+		}
+		if (options.scope) {
+			filtered = filterByScope(filtered, options.scope);
+		}
+		if (options.direction) {
+			filtered = filterByDirection(filtered, options.direction);
+		}
+		if (options.system) {
+			filtered = filterBySystem(filtered, options.system);
+		}
+		if (options.language) {
+			filtered = filterByLanguage(filtered, options.language);
+		}
+		if (options.titleContains) {
+			filtered = filterByTitleContains(filtered, options.titleContains);
+		}
+		if (typeof options.minDuration === 'number') {
+			filtered = filterByMinDuration(filtered, options.minDuration);
+		}
+		if (typeof options.maxDuration === 'number') {
+			filtered = filterByMaxDuration(filtered, options.maxDuration);
+		}
+
+		return {
+			response: {
+				requestId,
+				records: {
+					totalRecords: filtered.length,
+					currentPageSize: filtered.length,
+					currentPageNumber: 0,
+				},
+				calls: filtered,
+			},
+			totalBeforeFilter,
+		};
 	}
 
 	/**

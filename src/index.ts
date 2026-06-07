@@ -160,7 +160,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 			{
 				name: 'list_users',
 				description:
-					'List all Gong users in your workspace. Returns user details including name, email, and title.',
+					'List all Gong users in the organization. Returns name, email, title, and user IDs. Useful when you need a Gong user ID for search_calls filters like primaryUserIds, though for most "find calls by this person" cases you can pass their email directly to primaryUserEmails or participantEmails instead.',
 				inputSchema: {
 					type: 'object',
 					properties: {
@@ -181,21 +181,37 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 			{
 				name: 'search_calls',
 				description:
-					'Search for Gong calls with advanced filters including date range, workspace, primary users (call hosts), and specific call IDs. More flexible than list_calls for targeted queries.',
+					`Search Gong calls with rich filters. The primary tool for narrowing down calls before drilling in with get_call_summary or get_call_transcript.
+
+Supported filters:
+- When: fromDateTime, toDateTime (ISO 8601). Always prefer a date range — unbounded queries pull every call in the workspace.
+- Who hosted: primaryUserIds, primaryUserEmails, excludePrimaryUserIds.
+- Who participated (host OR attendee OR invitee): participantUserIds, participantEmails, excludeParticipantUserIds, excludeParticipantEmails.
+- Customer/topic: customerName (CRM account name, email domain, or title substring), titleContains, trackers (see note below).
+- Metadata: scope (External/Internal), direction, system (Zoom/Meet/…), language (eng/jpn/…), minDuration and maxDuration in seconds.
+- Output shape: include (array of keyPoints, trackers, highlights, speakers, comments, context, outline, media). Parties + brief + topics are always returned.
+
+Behavior:
+- Auto-paginates up to ~5000 calls. If a user asks for a broad question, guide them to narrow with a date range, scope, minDuration, or customerName first.
+- trackers filter does case-insensitive substring match on tracker names. Names are workspace-specific — call get_trackers first to see what's configured before guessing.
+- When the rich output would exceed the output cap, the tool auto-falls back to a compact table showing all IDs/titles. Use get_call_summary on specific IDs to go deeper.
+- Filters compose with AND logic (primaryUserIds + customerName = hosted by user X on customer Y calls).
+
+Usage pattern: narrow with search_calls → drill into specific calls with get_call_summary (AI summary) or get_call_transcript (exact quotes).`,
 				inputSchema: {
 					type: 'object',
 					properties: {
 						fromDateTime: {
 							type: 'string',
 							description:
-								'Start date/time filter in ISO 8601 format (e.g., 2024-01-01T00:00:00Z). Must be before toDateTime if both specified.',
+								'Start date/time filter in ISO 8601 format (e.g., 2024-01-01T00:00:00Z). Strongly recommended — without a date range, the tool pulls every call in the workspace. Must be before toDateTime if both specified.',
 							pattern:
 								'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$',
 						},
 						toDateTime: {
 							type: 'string',
 							description:
-								'End date/time filter in ISO 8601 format (e.g., 2024-01-31T23:59:59Z). Must be after fromDateTime if both specified.',
+								'End date/time filter in ISO 8601 format (e.g., 2024-01-31T23:59:59Z). Strongly recommended alongside fromDateTime. Must be after fromDateTime if both specified.',
 							pattern:
 								'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$',
 						},
@@ -208,11 +224,122 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 						primaryUserIds: {
 							type: 'array',
 							description:
-								'Filter by primary user IDs (call hosts). Array of numeric strings.',
+								'Filter by primary user IDs (call hosts only, server-side). Use participantUserIds to find calls where a user was any participant.',
 							items: {
 								type: 'string',
 								pattern: '^\\d{1,20}$',
 							},
+						},
+						primaryUserEmails: {
+							type: 'array',
+							description:
+								'Filter by host email (case-insensitive). Alternative to primaryUserIds when you have emails instead of user IDs.',
+							items: {
+								type: 'string',
+								format: 'email',
+							},
+						},
+						excludePrimaryUserIds: {
+							type: 'array',
+							description:
+								'Exclude calls hosted by these user IDs.',
+							items: {
+								type: 'string',
+								pattern: '^\\d{1,20}$',
+							},
+						},
+						participantUserIds: {
+							type: 'array',
+							description:
+								'Filter by participant user IDs. Matches calls where any participant (host, attendee, or invitee) has a matching Gong user ID. Requires a date range for optimal performance.',
+							items: {
+								type: 'string',
+								pattern: '^\\d{1,20}$',
+							},
+						},
+						excludeParticipantUserIds: {
+							type: 'array',
+							description:
+								'Exclude calls where any participant has a matching user ID.',
+							items: {
+								type: 'string',
+								pattern: '^\\d{1,20}$',
+							},
+						},
+						participantEmails: {
+							type: 'array',
+							description:
+								'Filter by participant email addresses (case-insensitive). Matches calls where any participant has a matching email.',
+							items: {
+								type: 'string',
+								format: 'email',
+							},
+						},
+						excludeParticipantEmails: {
+							type: 'array',
+							description:
+								'Exclude calls where any participant has a matching email (case-insensitive).',
+							items: {
+								type: 'string',
+								format: 'email',
+							},
+						},
+						customerName: {
+							type: 'string',
+							description:
+								'Filter by customer/account name (case-insensitive substring match). Searches CRM account name, external participant email domains, and call titles.',
+							minLength: 1,
+						},
+						titleContains: {
+							type: 'string',
+							description:
+								'Filter calls whose title contains this substring (case-insensitive).',
+							minLength: 1,
+						},
+						trackers: {
+							type: 'array',
+							description:
+								'Filter calls where at least one matching tracker fired (count > 0). Tracker names are matched case-insensitive substring and vary by workspace — call get_trackers first to discover what is configured.',
+							items: {
+								type: 'string',
+								minLength: 1,
+							},
+						},
+						scope: {
+							type: 'string',
+							description:
+								'Filter by call scope: External (customer-facing), Internal (team), or Unknown.',
+							enum: ['External', 'Internal', 'Unknown'],
+						},
+						direction: {
+							type: 'string',
+							description:
+								'Filter by call direction: Inbound, Outbound, Conference, or Unknown.',
+							enum: ['Inbound', 'Outbound', 'Conference', 'Unknown'],
+						},
+						system: {
+							type: 'string',
+							description:
+								'Filter by conferencing system (e.g., "Zoom", "Google Meet"). Case-insensitive substring match.',
+							minLength: 1,
+						},
+						language: {
+							type: 'string',
+							description:
+								'Filter by language code (e.g., "eng", "jpn"). Case-insensitive exact match.',
+							minLength: 1,
+						},
+						minDuration: {
+							type: 'integer',
+							description:
+								'Minimum call duration in seconds. Useful for filtering out no-shows or misfired meetings.',
+							minimum: 0,
+						},
+						maxDuration: {
+							type: 'integer',
+							description:
+								'Maximum call duration in seconds.',
+							minimum: 0,
 						},
 						callIds: {
 							type: 'array',
@@ -223,11 +350,23 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 								pattern: '^\\d{1,20}$',
 							},
 						},
-						cursor: {
-							type: 'string',
+						include: {
+							type: 'array',
 							description:
-								'Pagination cursor for fetching next page of results',
-							minLength: 1,
+								'Additional per-call data beyond the defaults (parties, brief, topics). Start lean and add fields as needed — each extra field multiplies response size by number of calls. Options: keyPoints (~5KB/call), trackers (~3KB/call, auto-added when trackers filter is used), highlights (~3KB/call), speakers (talk time, ~1KB/call), comments (varies), context (CRM links, ~1KB/call), outline (~80KB/call, AVOID unless you need full structure of one call), media (audio/video URLs).',
+							items: {
+								type: 'string',
+								enum: [
+									'keyPoints',
+									'trackers',
+									'highlights',
+									'speakers',
+									'comments',
+									'context',
+									'outline',
+									'media',
+								],
+							},
 						},
 					},
 				},
@@ -428,7 +567,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 			{
 				name: 'get_trackers',
 				description:
-					'List all keyword tracker definitions including tracked phrases, affiliation (who speaks them), and filter queries. Explains tracker hits visible in call summaries.',
+					'List keyword tracker definitions configured in a workspace, including every tracked phrase and which side is tracked (company/customer). Call this before using the trackers filter on search_calls so you know what names exist — workspace admins set these up and naming varies (e.g., "Competitors" vs "Competitor Mentions"). Also useful to explain tracker hits that appear in call summaries.',
 				inputSchema: {
 					type: 'object',
 					properties: {
@@ -621,12 +760,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 			case 'search_calls': {
 				// Validate input with Zod schema (will throw ZodError if invalid)
 				const validated = searchCallsRequestSchema.parse(args ?? {});
-				const result = await gong.searchCalls(validated);
+				const { response, totalBeforeFilter } =
+					await gong.searchCallsAll(validated);
 				return {
 					content: [
 						{
 							type: 'text',
-							text: formatCallDetailsResponse(result),
+							text: formatCallDetailsResponse(
+								response,
+								totalBeforeFilter,
+								validated.trackers,
+							),
 						},
 					],
 				};
