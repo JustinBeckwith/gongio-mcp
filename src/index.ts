@@ -109,6 +109,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 						},
 					},
 				},
+				annotations: { readOnlyHint: true, openWorldHint: true },
 			},
 			{
 				name: 'get_call_summary',
@@ -125,6 +126,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 					},
 					required: ['callId'],
 				},
+				annotations: { readOnlyHint: true, openWorldHint: true },
 			},
 			{
 				name: 'get_call_transcript',
@@ -156,6 +158,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 					},
 					required: ['callId'],
 				},
+				annotations: { readOnlyHint: true, openWorldHint: true },
 			},
 			{
 				name: 'list_users',
@@ -177,6 +180,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 						},
 					},
 				},
+				annotations: { readOnlyHint: true, openWorldHint: true },
 			},
 			{
 				name: 'search_calls',
@@ -370,6 +374,7 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 						},
 					},
 				},
+				annotations: { readOnlyHint: true, openWorldHint: true },
 			},
 			{
 				name: 'search_calls_by_account',
@@ -428,6 +433,7 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 					},
 					required: ['domains'],
 				},
+				annotations: { readOnlyHint: true, openWorldHint: true },
 			},
 			{
 				name: 'search_calls_by_opportunity',
@@ -479,6 +485,7 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 						cursor: { type: 'string', minLength: 1 },
 					},
 				},
+				annotations: { readOnlyHint: true, openWorldHint: true },
 			},
 			{
 				name: 'search_transcripts',
@@ -547,6 +554,7 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 					},
 					required: ['keywords', 'fromDateTime', 'toDateTime'],
 				},
+				annotations: { readOnlyHint: true, openWorldHint: true },
 			},
 			{
 				name: 'get_call',
@@ -563,6 +571,7 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 					},
 					required: ['callId'],
 				},
+				annotations: { readOnlyHint: true, openWorldHint: true },
 			},
 			{
 				name: 'get_trackers',
@@ -578,6 +587,7 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 						},
 					},
 				},
+				annotations: { readOnlyHint: true, openWorldHint: true },
 			},
 			{
 				name: 'get_user',
@@ -594,6 +604,7 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 					},
 					required: ['userId'],
 				},
+				annotations: { readOnlyHint: true, openWorldHint: true },
 			},
 			{
 				name: 'search_users',
@@ -631,6 +642,7 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 						},
 					},
 				},
+				annotations: { readOnlyHint: true, openWorldHint: true },
 			},
 			{
 				name: 'list_workspaces',
@@ -640,6 +652,7 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 					type: 'object',
 					properties: {},
 				},
+				annotations: { readOnlyHint: true, openWorldHint: true },
 			},
 			{
 				name: 'list_library_folders',
@@ -657,6 +670,7 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 					},
 					required: ['workspaceId'],
 				},
+				annotations: { readOnlyHint: true, openWorldHint: true },
 			},
 			{
 				name: 'get_library_folder_calls',
@@ -674,6 +688,7 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 					},
 					required: ['folderId'],
 				},
+				annotations: { readOnlyHint: true, openWorldHint: true },
 			},
 		],
 	};
