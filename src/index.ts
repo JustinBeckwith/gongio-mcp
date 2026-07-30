@@ -115,7 +115,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 						},
 					},
 				},
-				annotations: READ_ONLY_TOOL_ANNOTATIONS,
 			},
 			{
 				name: 'get_call_summary',
@@ -132,7 +131,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 					},
 					required: ['callId'],
 				},
-				annotations: READ_ONLY_TOOL_ANNOTATIONS,
 			},
 			{
 				name: 'get_call_transcript',
@@ -164,7 +162,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 					},
 					required: ['callId'],
 				},
-				annotations: READ_ONLY_TOOL_ANNOTATIONS,
 			},
 			{
 				name: 'list_users',
@@ -186,7 +183,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 						},
 					},
 				},
-				annotations: READ_ONLY_TOOL_ANNOTATIONS,
 			},
 			{
 				name: 'search_calls',
@@ -380,7 +376,6 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 						},
 					},
 				},
-				annotations: READ_ONLY_TOOL_ANNOTATIONS,
 			},
 			{
 				name: 'search_calls_by_account',
@@ -439,7 +434,6 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 					},
 					required: ['domains'],
 				},
-				annotations: READ_ONLY_TOOL_ANNOTATIONS,
 			},
 			{
 				name: 'search_calls_by_opportunity',
@@ -491,7 +485,6 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 						cursor: { type: 'string', minLength: 1 },
 					},
 				},
-				annotations: READ_ONLY_TOOL_ANNOTATIONS,
 			},
 			{
 				name: 'search_transcripts',
@@ -560,7 +553,6 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 					},
 					required: ['keywords', 'fromDateTime', 'toDateTime'],
 				},
-				annotations: READ_ONLY_TOOL_ANNOTATIONS,
 			},
 			{
 				name: 'get_call',
@@ -577,7 +569,6 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 					},
 					required: ['callId'],
 				},
-				annotations: READ_ONLY_TOOL_ANNOTATIONS,
 			},
 			{
 				name: 'get_trackers',
@@ -593,7 +584,6 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 						},
 					},
 				},
-				annotations: READ_ONLY_TOOL_ANNOTATIONS,
 			},
 			{
 				name: 'get_user',
@@ -610,7 +600,6 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 					},
 					required: ['userId'],
 				},
-				annotations: READ_ONLY_TOOL_ANNOTATIONS,
 			},
 			{
 				name: 'search_users',
@@ -648,7 +637,6 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 						},
 					},
 				},
-				annotations: READ_ONLY_TOOL_ANNOTATIONS,
 			},
 			{
 				name: 'list_workspaces',
@@ -658,7 +646,6 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 					type: 'object',
 					properties: {},
 				},
-				annotations: READ_ONLY_TOOL_ANNOTATIONS,
 			},
 			{
 				name: 'list_library_folders',
@@ -676,7 +663,6 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 					},
 					required: ['workspaceId'],
 				},
-				annotations: READ_ONLY_TOOL_ANNOTATIONS,
 			},
 			{
 				name: 'get_library_folder_calls',
@@ -694,9 +680,11 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 					},
 					required: ['folderId'],
 				},
-				annotations: READ_ONLY_TOOL_ANNOTATIONS,
 			},
-		],
+		].map((tool) => ({
+			...tool,
+			annotations: READ_ONLY_TOOL_ANNOTATIONS,
+		})),
 	};
 });
 
