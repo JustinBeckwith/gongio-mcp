@@ -6,6 +6,7 @@ import {
 	ListResourcesRequestSchema,
 	ListToolsRequestSchema,
 	ReadResourceRequestSchema,
+	type ToolAnnotations,
 } from '@modelcontextprotocol/sdk/types.js';
 import { ZodError } from 'zod';
 import {
@@ -69,6 +70,11 @@ const server = new Server(
 		},
 	},
 );
+
+const READ_ONLY_TOOL_ANNOTATIONS = {
+	readOnlyHint: true,
+	openWorldHint: true,
+} satisfies ToolAnnotations;
 
 // Define available tools
 server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -675,7 +681,10 @@ Usage pattern: narrow with search_calls → drill into specific calls with get_c
 					required: ['folderId'],
 				},
 			},
-		],
+		].map((tool) => ({
+			...tool,
+			annotations: READ_ONLY_TOOL_ANNOTATIONS,
+		})),
 	};
 });
 

@@ -22,7 +22,7 @@
 		"fix": "biome check --write .",
 		"format": "biome check --write .",
 		"validate:mcp": "node --experimental-strip-types scripts/validate-mcp.ts",
-		"prepare": "husky",
+		"prepare": "husky && npm run build",
 		"typecheck": "tsc --noEmit -p tsconfig.check.json"
 	},
 	"keywords": [
