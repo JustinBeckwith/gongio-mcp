@@ -52,12 +52,12 @@
 		"@commitlint/cli": "^21.0.0",
 		"@commitlint/config-conventional": "^21.0.0",
 		"@types/node": "^24.9.1",
-		"@vitest/coverage-v8": "^4.0.3",
+		"@vitest/coverage-v8": "^5.0.0",
 		"ajv": "^8.17.1",
 		"ajv-formats": "^3.0.1",
 		"husky": "^9.1.7",
 		"typescript": "^7.0.0",
-		"vitest": "^4.0.2"
+		"vitest": "^5.0.0"
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.20.2",
