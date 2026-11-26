@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM node:24-alpine AS builder
+FROM node:26-alpine AS builder
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -9,7 +9,7 @@ COPY src/ ./src/
 RUN pnpm run build
 
 # Stage 2: Production (prod deps only — no devDependencies, no lifecycle scripts)
-FROM node:24-alpine AS production
+FROM node:26-alpine AS production
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
